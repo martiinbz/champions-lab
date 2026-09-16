@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "champions-lab"
+version = "0.1.0"
+description = "Reproducible Champions League forecasts and historical dashboard"
+requires-python = ">=3.11"
+dependencies = ["pandas>=2.2,<3", "numpy>=2,<3", "scipy>=1.14,<2", "scikit-learn>=1.5,<2", "requests>=2.32,<3", "truststore>=0.10,<1", "beautifulsoup4>=4.12,<5", "streamlit>=1.40,<2", "plotly>=5.24,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+champions = "champions.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
