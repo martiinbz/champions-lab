@@ -2,6 +2,15 @@
 
 Auditoría realizada el 16 de septiembre de 2026. Los datos y resultados completos permanecen en la carpeta local; los metadatos de cada ejecución son la evidencia primaria y pueden consultarse desde el dashboard.
 
+Versión de código comprobada: `0093cba`. **101 pruebas locales aprobadas** y [verificación de GitHub Actions aprobada](https://github.com/martiinbz/champions-lab/actions/runs/35073307374). La integración opcional que lee la descarga local de UEFA se omite en GitHub porque allí no se redistribuyen los datos originales.
+
+Ejecuciones finales reproducidas y con hashes íntegros, ambas con 20.000 simulaciones y árbol de trabajo limpio al generarlas:
+
+- `20260916T082139-4bb35c2e`: corte 08/09, cero resultados actuales incorporados, 9.305 partidos de entrenamiento.
+- `20260916T082139-473ef85e`: corte 16/09, 18 resultados actuales incorporados, 9.442 partidos de entrenamiento.
+
+En el segundo corte, los bloques UCL de selección dan log loss **0,9590** para Poisson frente a **1,0401** del baseline. El bloque reservado de **55 partidos** da log loss 0,8807 y Brier 0,5162 para el modelo elegido. No se usó ese bloque para elegirlo. Ninguna de las dos ejecuciones necesitó el desempate aleatorio de último recurso en las 20.000 simulaciones.
+
 | Requisito | Evidencia y comprobación |
 |---|---|
 | Temporada masculina 2026/27 | Calendario descargado directamente de UEFA, 36 equipos, 144 partidos, 18 resultados y 126 pendientes |
