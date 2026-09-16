@@ -7,6 +7,7 @@
 from pathlib import Path
 import json
 import pandas as pd
+import plotly.express as px
 
 ROOT = Path(__file__).resolve().parents[1]
 runs = sorted((ROOT / "results/snapshots").glob("*/metadata.json"))
@@ -23,6 +24,8 @@ print(coverage.to_string(index=False))
 print(json.dumps(metadata["evaluation"], indent=2, ensure_ascii=False))
 
 # %%
-probabilities.set_index("team")[["top8", "round16", "champion"]].sort_values("champion").plot.barh(
-    figsize=(10, 14), title=f"{metadata['season']} · corte {metadata['cutoff']}"
-)
+plot_data = probabilities.melt(id_vars='team', value_vars=['top8', 'round16', 'champion'],
+                               var_name='Evento', value_name='Probabilidad')
+figure = px.bar(plot_data, x='Probabilidad', y='team', color='Evento', orientation='h', barmode='group',
+                height=1100, title=f"{metadata['season']} · corte {metadata['cutoff']}")
+figure.show()

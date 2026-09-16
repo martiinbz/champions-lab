@@ -121,7 +121,8 @@ class BaselineModel:
                   if c["weighted_matches"] < self.params["min_team_matches"]]
         if not len(frame) or sparse:
             self._warn("Limited training coverage; priors dominate for " +
-                       (", ".join(sparse) if sparse else "all teams (no completed matches)"))
+                       ((", ".join(sparse[:12]) + (f" and {len(sparse)-12} other teams (see model coverage)." if len(sparse) > 12 else ""))
+                        if sparse else "all teams (no completed matches)"))
         prior = self.params["prior_matches"]
         away = (np.dot(weights, frame.away_goals.to_numpy(dtype=float)) + prior * self.params["prior_goals"]) / (weights.sum() + prior)
         home = (np.dot(weights, frame.home_goals.to_numpy(dtype=float)) + prior * self.params["prior_goals"] * np.exp(self.params["prior_home_advantage"])) / (weights.sum() + prior)

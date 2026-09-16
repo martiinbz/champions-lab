@@ -50,6 +50,10 @@ Las columnas de rondas son acumulativas; no deben sumar 100% entre sí. Las cate
 
 El modelo de goles aprende fuerza ofensiva y defensiva y ventaja local con regularización y recencia. Se contrasta con un baseline mediante validación temporal y métricas probabilísticas. La documentación de fuentes y modelos se encuentra en `docs/`.
 
+Por defecto, `--model auto` elige entre Poisson y baseline con bloques temporales de Champions; reserva un bloque posterior para evaluación. Puedes fijar `--model poisson` o `--model baseline` para compararlos. No se supone que una métrica obtenida en pocos partidos garantice resultados futuros.
+
+Tras el sorteo de eliminatorias, el motor permite incorporar el cuadro y resultados oficiales con `--knockout RUTA_JSON`; consulta [el esquema](docs/knockout-state.md). La fuente automática actual descarga la fase liga: el cuadro posterior se importa explícitamente cuando exista.
+
 El proyecto conserva los datos descargados localmente. GitHub contiene código y documentación; no redistribuye automáticamente datasets de terceros. Para obtenerlos en otra máquina, ejecuta `update`. Las fuentes, sus hashes, limitaciones y cobertura por club acompañan a los resultados. No hay claves API incrustadas.
 
 ## Estructura y reproducibilidad

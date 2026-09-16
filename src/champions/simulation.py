@@ -130,7 +130,7 @@ def _bracket(order, rates, rng):
     }
 
 
-def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int = 42) -> tuple[pd.DataFrame, dict]:
+def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int = 42, knockout: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """Forecast a complete league schedule and an undrawn knockout phase.
 
     model.predict_goals(home, away, neutral=False) must return two finite,
@@ -143,6 +143,9 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
     if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, (int, np.integer)) or seed < 0:
         raise ValueError("seed must be a nonnegative integer")
     f, teams = _validate(fixtures)
+    if knockout is not None:
+        from champions.knockout import validate_state
+        validate_state(knockout, teams, f)
     rng = np.random.default_rng(seed)
     index = {team: i for i, team in enumerate(teams)}
     home = f.home.map(index).to_numpy()
@@ -174,12 +177,24 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
         ag[:, unknown] = rng.poisson(rates[0, home[unknown], away[unknown], 1], size=(size, int(unknown.sum())))
         metrics = _league_metrics(hg, ag, incidence_h, incidence_a, opponents)
         order, groups, tied_sims = _rank(metrics, rng)
+        if knockout is not None:
+            official = np.array([index[t] for t in knockout['league_order']])
+            arranged = metrics[:, official]
+            for j in range(35):
+                if tuple(arranged[0,j]) < tuple(arranged[0,j+1]):
+                    raise ValueError('La clasificación oficial contradice los resultados de fase liga.')
+            order = np.broadcast_to(official, order.shape)
+            groups = tied_sims = 0
         unresolved_groups += groups
         unresolved_sims += tied_sims
         selections = {"top8": order[:, :8], "positions9_16": order[:, 8:16],
                       "positions17_24": order[:, 16:24], "playoff": order[:, 8:24],
                       "eliminated": order[:, 24:]}
-        selections.update(_bracket(order, rates, rng))
+        if knockout is None:
+            selections.update(_bracket(order, rates, rng))
+        else:
+            from champions.knockout import conditioned_bracket
+            selections.update(conditioned_bracket(order, rates, rng, knockout, teams))
         for col, selected in selections.items():
             counts[col] += np.bincount(selected.ravel(), minlength=36)
         points_total += metrics[:, :, 0].sum(axis=0)
@@ -189,7 +204,7 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
         messages.append(f"{unresolved_groups} unresolved league tie groups in {unresolved_sims}/{simulations} simulations: disciplinary points and club coefficients unavailable; seeded random ordering used, not an exact UEFA resolution.")
         warnings.warn(messages[0], RuntimeWarning, stacklevel=2)
     messages.extend([
-        "Knockout forecast assumes an undrawn bracket; conditioning on known draws or knockout results is unsupported. Do not use for post-draw updates.",
+        ("Knockout forecast assumes an undrawn bracket; supply a sourced knockout state for post-draw updates." if knockout is None else "Forecast conditioned on supplied official knockout draw, league order and completed legs."),
         "Disciplinary points and club coefficients are unavailable; unresolved ties, if any, use a counted random fallback.",
         "Goal simulation uses independent Poisson scores, constant rates, extra-time means divided by three, and 50/50 penalty shoot-outs.",
     ])
@@ -203,7 +218,7 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
         "unresolved_tie_simulation_fraction": unresolved_sims/simulations,
         "missing_tiebreakers": ["disciplinary_points", "club_coefficient"],
         "tie_fallback": "seeded_uniform_random_within_unresolved_group",
-        "knockout_fixture_support": False, "warnings": messages,
+        "knockout_fixture_support": True, "knockout_conditioned": knockout is not None, "warnings": messages,
         "assumptions": ["independent_poisson_goals", "extra_time_rates_divided_by_3",
                         "penalty_shootout_50_50", "uniform_unconstrained_regulatory_draw",
                         "fixed_goal_rates_throughout_tournament"],

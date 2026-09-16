@@ -33,7 +33,7 @@ def load_snapshots(root):
     """Isolate incomplete/invalid runs; never cache files that may be replaced."""
     snapshots, issues = [], []
     for folder in sorted((root / "results" / "snapshots").glob("*")):
-        if not folder.is_dir():
+        if not folder.is_dir() or folder.name.startswith('.'):
             continue
         try:
             meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8-sig"))
@@ -80,7 +80,8 @@ def load_snapshots(root):
 
 
 def probability_table(data):
-    result = data[["team", *[c for c in LABELS if c in data],
+    priority = ["champion", "top8", "round16", "quarterfinal", "semifinal", "final", "playoff", "positions9_16", "positions17_24", "eliminated"]
+    result = data[["team", *[c for c in priority if c in data],
                    *[c for c in EXPECTED if c in data]]].copy()
     for column in LABELS:
         if column in result:
@@ -101,8 +102,9 @@ def render_table(data):
 def freshness(meta):
     cutoff = timestamp(meta.get("cutoff"))
     created = timestamp(meta.get("created_at"))
-    st.caption(f"Corte de los datos: {meta.get('cutoff') or 'No disponible'} · "
-               f"Ejecución creada: {meta.get('created_at') or 'No disponible'}")
+    def fmt(value):
+        return value.strftime('%d/%m/%Y %H:%M UTC') if not pd.isna(value) else 'No disponible'
+    st.caption(f"Corte: {fmt(cutoff)} · Creado: {fmt(created)}")
     if pd.isna(cutoff):
         st.warning("Antigüedad de los datos desconocida: falta una fecha de corte válida.")
     else:
@@ -175,15 +177,20 @@ def main():
     season_runs = [(m, d) for m, d in snapshots if m["season"] == season]
     day = st.sidebar.selectbox("Jornada", sorted({m["matchday"] for m, _ in season_runs}, reverse=True), key="matchday")
     runs = {m["run_id"]: (m, d) for m, d in season_runs if m["matchday"] == day}
-    run = st.sidebar.selectbox("Ejecución", list(runs), key="run")
+    run = st.sidebar.selectbox("Ejecución", list(runs), key="run", format_func=lambda key:
+                               f"{runs[key][0].get('model', 'Modelo')} · {runs[key][0].get('simulations', '?')} sims · {key}")
     meta, data = runs[run]
     selected = st.sidebar.multiselect("Filtrar equipos", sorted(data.team), key="teams",
                                       help="Sin selección se muestran todos los equipos.")
     filtered = data[data.team.isin(selected)] if selected else data
+    if "champion" in filtered:
+        filtered = filtered.sort_values("champion", ascending=False)
     freshness(meta)
     warnings = meta.get("warnings") or []
-    for warning in warnings if isinstance(warnings, list) else [warnings]:
-        st.warning(str(warning))
+    if warnings:
+        with st.expander("Cobertura, supuestos y limitaciones del modelo", expanded=False):
+            for warning in warnings if isinstance(warnings, list) else [warnings]:
+                st.warning(str(warning))
     st.subheader("Probabilidades por equipo")
     st.caption("Probabilidades en %. Haz clic en las cabeceras para ordenar. — indica un dato ausente.")
     render_table(filtered)
@@ -199,11 +206,16 @@ def main():
         if metrics:
             metric = st.selectbox("Probabilidad a seguir", metrics, format_func=LABELS.get, key="history_metric")
             rows = []
+            chart_teams = selected or (data.nlargest(6, "champion").team.tolist() if "champion" in data else data.team.head(6).tolist())
+            seen_cuts = set()
             for m, d in season_runs:
                 if metric not in d:
                     continue
+                if m.get("cutoff") in seen_cuts:
+                    continue
+                seen_cuts.add(m.get("cutoff"))
                 for _, row in d.iterrows():
-                    if selected and row.team not in selected:
+                    if row.team not in chart_teams:
                         continue
                     rows.append({"Equipo": row.team, "Corte": timestamp(m.get("cutoff")),
                                  "Probabilidad (%)": row[metric] * 100,
@@ -222,8 +234,8 @@ def main():
                     st.plotly_chart(fig, width="stretch")
                 else:
                     st.info("No hay fechas de corte válidas para dibujar la evolución.")
-            st.caption("Historial de toda la temporada seleccionada. Cada punto identifica una ejecución; "
-                       "los cambios también pueden reflejar distintas versiones del modelo.")
+            st.caption("Última ejecución de cada corte. Sin filtro se muestran los seis favoritos actuales; "
+                       "selecciona equipos en el lateral para compararlos. Los cambios también pueden reflejar distintas versiones del modelo.")
         else:
             st.info("No hay probabilidades disponibles para mostrar la evolución.")
     with detail_tab:

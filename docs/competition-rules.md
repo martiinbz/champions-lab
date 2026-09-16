@@ -1,8 +1,8 @@
 # UEFA Champions League 2026/27 simulation contract
 
 The engine implements the men's Champions League league phase and an **undrawn**
-knockout bracket. It does not provide a fully conditioned forecast after knockout
-draws or matches. Regulations checked against UEFA's 2026/27 edition, effective
+knockout bracket, or a conditioned bracket supplied through `knockout`.
+Regulations checked against UEFA's 2026/27 edition, effective
 29 July 2026; research date: 16 September 2026.
 
 ## Interface and supported inputs
@@ -120,15 +120,18 @@ future rating updates or penalty specialists are modelled. Diagnostic
 single probability has approximate Monte Carlo standard error
 `sqrt(p*(1-p)/simulations)` before model uncertainty.
 
-## Known knockout fixtures and draws: explicitly unsupported
+## Known knockout fixtures and draws
 
-Any supplied non-league row, scored or unplayed, raises `NotImplementedError`
-before model prediction. A league-only call always assumes an undrawn bracket;
-it cannot detect a real-world draw from omitted information. Diagnostics always
-set `knockout_fixture_support=False` and warn against post-draw updates. Do not
-strip knockout rows to bypass this guard. There is no separate bracket input in
-this version. Future support needs persistent official bracket slots, leg order,
-observed scores including extra time/penalties, and conditional draw logic.
+The league DataFrame still rejects non-league rows; knockout information is passed
+separately through `simulate(..., knockout=state)`. See [state format](knockout-state.md).
+The state contains official final league order, drawn playoff and optional R16
+slots, completed legs and official tied-aggregate winners. Pending legs and draws
+are simulated, completed legs are fixed. A fully completed tournament has a certain
+winner. The pipeline checks the state timestamp against the forecast cutoff and
+persists the exact state with hashes. Diagnostics report `knockout_conditioned`.
+Omitting state still means an undrawn tournament; the league results page alone
+does not reveal official knockout information. Importing that information remains
+explicit because the current automatic source is the league-phase article.
 
 ## Verification
 

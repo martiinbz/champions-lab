@@ -310,6 +310,8 @@ def fetch_history(raw_dir: Path) -> pd.DataFrame:
         sources.append((f'https://www.football-data.co.uk/new/{country}.csv', f'fd-{country}.csv', country, None))
     for year in [2024, 2025]:
         for filename, competition in [('cl', 'UCL'), ('clq', 'UCL qualifying'), ('el', 'UEL'), ('conf', 'UECL'), ('elq', 'UEL qualifying'), ('confq', 'UECL qualifying')]:
+            if year == 2025 and filename in ('el', 'conf'):
+                continue  # Upstream has no main-phase files for these editions.
             season = f'{year}-{str(year+1)[-2:]}'
             sources.append((f'https://raw.githubusercontent.com/openfootball/champions-league/master/{season}/{filename}.txt', f'openfootball-{season}-{filename}.txt', competition, year))
 

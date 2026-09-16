@@ -20,6 +20,7 @@ La arquitectura debe permitir incorporar posteriormente otras competiciones, nue
 - Probabilidades por equipo de:
   - terminar en el top 8;
   - terminar entre los puestos 9–16;
+  - terminar entre los puestos 17–24 y acceder al playoff (9–24);
   - quedar eliminado en la fase liga;
   - alcanzar octavos de final;
   - alcanzar cuartos de final;
@@ -169,3 +170,13 @@ La primera versión se considerará funcional cuando:
 ## 11. Evolución prevista
 
 La extensión a otras competiciones se realizará mediante una interfaz común de competición, calendario, reglas de clasificación y modelo. Las futuras funciones de picks deberán construirse sobre probabilidades calibradas y datos de cuotas, manteniendo separadas la predicción deportiva y cualquier cálculo de valor esperado.
+
+## 12. Decisiones concretas de implementación
+
+- Paquete Python `src/champions`: datos, modelos, evaluación, motor, pipeline y CLI separados. Streamlit lee únicamente snapshots locales.
+- Datos de fase liga descargados de UEFA y entrenamiento a partir de Football-Data/OpenFootball; cobertura y limitaciones documentadas en `docs/data-sources.md`.
+- Modelo de aprendizaje estadístico: Poisson de ataque/defensa, regularizado y ponderado por recencia; comparación con baseline y selección temporal específica de Champions. Detalles en `docs/models.md`.
+- La simulación aplica los desempates disponibles, cuadro UEFA, prórroga y penaltis. Los empates que requieren disciplina/coeficientes no disponibles se resuelven aleatoriamente y se contabilizan expresamente; no se presentan como resolución reglamentaria exacta.
+- Tras un sorteo, `--knockout` admite el cuadro oficial y resultados conocidos. El adaptador automático actual obtiene la fase liga; la importación del cuadro de eliminatorias es explícita.
+- Las actualizaciones por jornada son bajo demanda; no se ha instalado una tarea programada en el ordenador.
+- El dataset de calendario se exige completo; el histórico tiene profundidad desigual por club. La aplicación conserva esas advertencias y no equipara número de simulaciones con fiabilidad predictiva.

@@ -58,8 +58,13 @@ def training_data(history: pd.DataFrame, fixtures: pd.DataFrame, cutoff: str) ->
     current = fixtures.loc[fixtures.home_goals.notna()].copy()
     current["competition"] = "UCL"
     frame = pd.concat([history.copy(), current], ignore_index=True)
-    frame["date"] = pd.to_datetime(frame.date, utc=True, errors="raise")
-    frame = frame.loc[(frame.date + pd.Timedelta(hours=3) < utc(cutoff)) &
+    frame["date"] = pd.to_datetime(frame.date, utc=True, errors="raise", format="mixed")
+    conservative_completion = frame.date + pd.Timedelta(hours=3)
+    if 'completed_at' in frame:
+        frame['completed_at'] = pd.to_datetime(frame.completed_at, utc=True, format='mixed').fillna(conservative_completion)
+    else:
+        frame['completed_at'] = conservative_completion
+    frame = frame.loc[(frame.completed_at < utc(cutoff)) &
                       frame.home_goals.notna() & frame.away_goals.notna()].copy()
     frame["_day"] = frame.date.dt.strftime("%Y-%m-%d")
     keys = ["_day", "home", "away"]
@@ -100,7 +105,8 @@ def update_data(root: Path) -> dict:
 
 
 def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int = 10000,
-        seed: int = 42, evaluate_model: bool = True, model_kind: str = "auto") -> Path:
+        seed: int = 42, evaluate_model: bool = True, model_kind: str = "auto",
+        knockout_path: Path | None = None) -> Path:
     from champions.data import validate_fixtures
     from champions.models import GoalModel
     from champions.evaluation import evaluate_models
@@ -125,6 +131,11 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
     fixtures = pd.read_csv(inputs / "fixtures.csv")
     validate_fixtures(fixtures)
     fixtures = as_of(fixtures, cutoff, matchday)
+    knockout = None
+    if knockout_path is not None:
+        from champions.knockout import validate_state
+        knockout = json.loads(Path(knockout_path).read_text(encoding="utf-8"))
+        validate_state(knockout, sorted(set(fixtures.home) | set(fixtures.away)), fixtures, utc(cutoff))
     history = pd.read_csv(inputs / "history.csv")
     # For explicit historical matchdays, forbid later training fixtures as well.
     if matchday is not None:
@@ -159,7 +170,7 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
             raise ValueError("El modelo auto requiere evaluación; elige --model poisson o baseline al omitirla.")
         model_kind = evaluation.get("selected_model", "baseline")
     model = GoalModel(kind=model_kind).fit(history, cutoff)
-    probabilities, diagnostics = simulate(fixtures, model, simulations=simulations, seed=seed)
+    probabilities, diagnostics = simulate(fixtures, model, simulations=simulations, seed=seed, knockout=knockout)
     warnings.extend(diagnostics.get("warnings", []))
     warnings.extend(getattr(model, "warnings", []))
     for column in ["top8", "positions9_16", "positions17_24", "playoff", "eliminated",
@@ -178,21 +189,27 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
     fixtures.to_csv(data_target / "fixtures.csv", index=False)
     history.to_csv(data_target / "history.csv", index=False)
     pd.DataFrame(coverage).to_csv(data_target / "coverage.csv", index=False)
+    if knockout is not None:
+        write_json(data_target / "knockout.json", knockout)
     write_json(staging / "model.json", model.to_dict())
     probabilities.to_csv(staging / "probabilities.csv", index=False)
     try:
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True, stderr=subprocess.DEVNULL).strip()
+        dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True, stderr=subprocess.DEVNULL).strip())
     except (OSError, subprocess.CalledProcessError):
         commit = "unavailable"
+        dirty = None
     metadata = {"run_id": run_id, "season": str(fixtures.season.iloc[0]), "matchday": inferred,
                 "requested_matchday": matchday, "cutoff": utc(cutoff).isoformat(), "created_at": created.isoformat(),
                 "model": model_kind, "requested_model": requested_model, "version": __version__, "git_commit": commit,
+                "git_dirty": dirty, "code_hashes": {p.name: sha256(p) for p in sorted((root / "src/champions").glob("*.py"))},
+                "model_fit_info": model.to_dict().get("fit_info", {}),
                 "simulations": simulations, "seed": seed, "warnings": sorted(set(warnings)),
                 "evaluation": evaluation, "coverage": coverage, "diagnostics": diagnostics,
                 "known_results": len(played), "history_matches": len(history),
                 "latest_training_match": history.date.max().isoformat(),
                 "data_snapshot": str(data_target.relative_to(root)),
-                "data_hashes": {n: sha256(data_target / n) for n in ("fixtures.csv", "history.csv", "coverage.csv")},
+                "data_hashes": {n: sha256(data_target / n) for n in (["fixtures.csv", "history.csv", "coverage.csv"] + (["knockout.json"] if knockout else []))},
                 "output_hashes": {n: sha256(staging / n) for n in ("model.json", "probabilities.csv")},
                 "environment": {"python": platform.python_version(), **{n: version(n) for n in ["pandas", "numpy", "scipy"]}},
                 "retrospective": utc(cutoff) < created - pd.Timedelta(days=1)}
@@ -214,13 +231,18 @@ def reproduce(root: Path, run_id: str) -> dict:
     if not data.is_relative_to((root / "data" / "snapshots").resolve()):
         raise ValueError("Ruta de snapshot inválida.")
     for name, expected in meta["data_hashes"].items():
+        if Path(name).name != name:
+            raise ValueError('Nombre de archivo del snapshot inválido.')
         if sha256(data / name) != expected:
             raise ValueError(f"Snapshot alterado: {name}")
     for name, expected in meta["output_hashes"].items():
+        if Path(name).name != name:
+            raise ValueError('Nombre de archivo del resultado inválido.')
         if sha256(result / name) != expected:
             raise ValueError(f"Resultado alterado: {name}")
     model = GoalModel.from_dict(json.loads((result / "model.json").read_text(encoding="utf-8")))
-    fresh, _ = simulate(pd.read_csv(data / "fixtures.csv"), model, simulations=meta["simulations"], seed=meta["seed"])
+    knockout = json.loads((data / "knockout.json").read_text(encoding="utf-8")) if (data / "knockout.json").exists() else None
+    fresh, _ = simulate(pd.read_csv(data / "fixtures.csv"), model, simulations=meta["simulations"], seed=meta["seed"], knockout=knockout)
     old = pd.read_csv(result / "probabilities.csv")
     pd.testing.assert_frame_equal(fresh.reset_index(drop=True), old[fresh.columns].reset_index(drop=True),
                                   check_dtype=False, atol=1e-12, rtol=1e-12)

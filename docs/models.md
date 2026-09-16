@@ -182,6 +182,24 @@ before making confidence claims.
 
 ## Verification
 
+### Additional UCL assessment
+
+The production pipeline now calls `champions.evaluation.evaluate_models`, which
+adds three expanding-window UCL holdouts. Domestic and European matches strictly
+before each block may be used for training. Only UCL matches are scored in those
+blocks. The first two blocks select Poisson versus baseline by weighted log loss;
+the final block is reserved for assessment and cannot change the selected model.
+The pipeline's default `--model auto` fits that selection on all eligible data.
+Explicit `--model poisson` and `--model baseline` overrides are recorded.
+
+The report contains block boundaries/counts, log loss, Brier, calibration bins and
+ECE (mean over three outcomes, weighted by bin occupancy). ECE describes observed
+calibration; it does not calibrate predictions or guarantee future performance.
+The final UCL block can be small; its sample size must accompany any metric claim.
+Selection falls back to the general temporal holdout when UCL evidence is insufficient.
+
+### Test coverage
+
 Run `python -m pytest tests/test_models.py -q`. Tests cover attack and defence
 learning, home advantage and neutral symmetry, strict cutoff and completion-time
 exclusion, future and holdout perturbation isolation, timestamp grouping, input

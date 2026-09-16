@@ -62,7 +62,7 @@ def test_contract_labels_freshness_metadata_and_uncertainty(root):
     assert table.loc[0, "Campeón"] == pytest.approx(20)
     assert "Puestos 17–24" in table
     text = " ".join(x.value for x in app.caption) + " ".join(x.value for x in app.markdown)
-    assert "2026-09-01" in text
+    assert "01/09/2026" in text
     assert "Monte Carlo" in text and "calibración" in text
     assert any("Cobertura parcial" in x.value for x in app.warning)
     assert app.json
@@ -173,6 +173,7 @@ def test_offline_and_wilson_interval_at_zero(root, monkeypatch):
     snapshot(root, probability=0)
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     app = start()
+    app.selectbox(key="detail").select("Real Madrid").run()
     detail = app.dataframe[1].value.set_index("Hito")
     assert detail.loc["Campeón", "Probabilidad (%)"] == 0
     assert detail.loc["Campeón", "MC 95% superior (%)"] > 0

@@ -19,6 +19,7 @@ def main():
     forecast.add_argument("--seed", type=int, default=42)
     forecast.add_argument("--model", choices=["auto", "poisson", "baseline"], default="auto")
     forecast.add_argument("--skip-evaluation", action="store_true")
+    forecast.add_argument("--knockout", type=Path, help="JSON del cuadro oficial y partidos de eliminatorias ya conocidos")
     replay = commands.add_parser("reproduce", help="Verificar hashes y reproducir una ejecución")
     replay.add_argument("run_id")
     commands.add_parser("list", help="Listar snapshots")
@@ -31,7 +32,7 @@ def main():
         elif args.command == "simulate":
             value = {"snapshot": str(run(args.root.resolve(), args.cutoff or pd.Timestamp.now(tz="UTC").isoformat(),
                                          args.matchday, args.simulations, args.seed,
-                                         not args.skip_evaluation, args.model))}
+                                         not args.skip_evaluation, args.model, args.knockout))}
         elif args.command == "reproduce":
             value = reproduce(args.root.resolve(), args.run_id)
         else:
