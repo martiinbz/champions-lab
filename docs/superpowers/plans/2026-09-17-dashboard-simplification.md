@@ -41,11 +41,12 @@
 - Modify: `app/streamlit_app.py`
 - Modify: `tests/test_dashboard.py`
 
-1. Add concise visual styling and summary cards.
-2. Render the probability table with crests.
-3. Render the complete expected ranking with crests.
-4. Render all-team expected-position evolution with a reversed y-axis.
-5. Move technical details into a collapsed expander.
+1. Add a failing AppTest asserting there is no sidebar UI, title banner, metrics,
+   filters, selectors, expander, or technical metadata.
+2. Select the newest snapshot automatically.
+3. Render only the probability table with crests.
+4. Render only the complete expected ranking with crests.
+5. Render only the all-team expected-position evolution with a reversed y-axis.
 6. Verify with Streamlit AppTest and a browser render.
 
 ### Task 4: Add the configurable simulation command

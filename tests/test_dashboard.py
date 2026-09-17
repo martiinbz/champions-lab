@@ -138,7 +138,7 @@ def test_every_current_team_has_a_local_crest_file():
     assert all(source["page"] and source["image"] for source in sources.values())
 
 
-def test_contract_labels_freshness_metadata_and_uncertainty(root):
+def test_dashboard_contains_only_the_three_requested_sections(root):
     snapshot(root)
     app = start()
     table = app.dataframe[0].value
@@ -147,29 +147,29 @@ def test_contract_labels_freshness_metadata_and_uncertainty(root):
     assert table.columns[1] == "Campeón"
     assert table.columns[-1] == "Escudo"
     assert "Puestos 17–24" in table
-    text = " ".join(x.value for x in app.caption) + " ".join(x.value for x in app.markdown)
-    assert "01/09/2026" in text
-    assert "Monte Carlo" in text and "calibración" in text
-    assert any("Cobertura parcial" in x.value for x in app.warning)
-    assert app.json
+    assert [item.value for item in app.subheader] == [
+        "Probabilidades por equipo",
+        "Clasificación esperada",
+        "Evolución de la posición esperada",
+    ]
+    assert not app.title
+    assert not app.metric
+    assert not app.selectbox
+    assert not app.multiselect
+    assert not app.expander
+    assert not app.button
+    assert not app.json
 
 
-def test_selectors_filter_table_but_keep_history_and_ranking(root):
+def test_latest_snapshot_is_selected_automatically_and_history_is_kept(root):
     snapshot(root)
     snapshot(root, "run-2", day=2, probability=.3)
     snapshot(root, "run-3", season="2025/26", day=8)
     app = start()
-    assert app.selectbox(key="season").value == "2026/27"
-    assert app.selectbox(key="run").value == "run-2"
-    app.multiselect(key="teams").set_value(["Real Madrid"]).run()
-    assert len(app.dataframe[0].value) == 1
+    assert app.dataframe[0].value.set_index("Equipo").loc["Real Madrid", "Campeón"] == pytest.approx(30)
     assert app.get("plotly_chart")
     assert any("2 de 36" in item.value for item in app.warning)
-    app.selectbox(key="matchday").set_value(1).run()
-    assert app.selectbox(key="run").value == "run-1"
-    app.selectbox(key="season").set_value("2025/26").run()
-    assert not app.exception
-    assert app.selectbox(key="run").value == "run-3"
+    assert not app.selectbox
 
 
 def test_optional_columns_are_missing_not_zero(root):
@@ -204,9 +204,9 @@ def test_invalid_probabilities_never_displayed(root, value):
 def test_reload_reads_new_snapshots(root):
     snapshot(root)
     app = start()
-    snapshot(root, "run-2", day=2)
-    app.button(key="refresh").click().run()
-    assert 2 in app.selectbox(key="matchday").options or "2" in app.selectbox(key="matchday").options
+    snapshot(root, "run-2", day=2, probability=.4)
+    app.run()
+    assert app.dataframe[0].value.set_index("Equipo").loc["Real Madrid", "Campeón"] == pytest.approx(40)
 
 
 def test_script_root_independent_of_cwd(tmp_path, monkeypatch):
@@ -229,8 +229,8 @@ def test_missing_optional_metadata_is_explicit(root):
         "run_id": "run-1", "season": "2026/27", "matchday": 1,
     }), encoding="utf-8")
     app = start()
-    assert any("Antigüedad" in x.value for x in app.warning)
-    assert any("Sin evaluación" in x.value for x in app.info)
+    assert not app.exception
+    assert not app.metric
 
 
 def test_null_optional_metadata_does_not_break_dashboard(root):
@@ -241,7 +241,7 @@ def test_null_optional_metadata_does_not_break_dashboard(root):
     (folder / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     app = start()
     assert not app.exception
-    assert [metric.value for metric in app.metric][2:] == ["—", "—"]
+    assert not app.metric
 
 
 def test_multiple_runs_same_day_and_absent_team(root):
@@ -250,11 +250,8 @@ def test_multiple_runs_same_day_and_absent_team(root):
     data = pd.read_csv(folder / "probabilities.csv")
     data[data.team == "Barcelona"].to_csv(folder / "probabilities.csv", index=False)
     app = start()
-    assert app.selectbox(key="run").value == "run-2"
     assert app.dataframe[0].value["Equipo"].tolist() == ["Barcelona"]
-    app.selectbox(key="run").set_value("run-1").run()
-    assert not app.exception
-    assert len(app.dataframe[0].value) == 2
+    assert not app.selectbox
 
 
 def test_offline_dashboard_and_local_crest_at_zero(root, monkeypatch):

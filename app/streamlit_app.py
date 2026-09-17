@@ -37,17 +37,6 @@ def timestamp(value):
     return pd.to_datetime(value, utc=True, errors="coerce")
 
 
-def format_integer(value):
-    """Format optional integral metadata without letting malformed runs break the UI."""
-    try:
-        number = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return "—"
-    if not np.isfinite(number) or not number.is_integer():
-        return "—"
-    return f"{int(number):,}".replace(",", ".")
-
-
 def load_snapshots(root):
     """Isolate incomplete/invalid runs; never cache files that may be replaced."""
     snapshots, issues = [], []
@@ -224,33 +213,13 @@ def render_expected_ranking(data):
                 )
 
 
-def freshness(meta):
-    cutoff = timestamp(meta.get("cutoff"))
-    created = timestamp(meta.get("created_at"))
-    def fmt(value):
-        return value.strftime('%d/%m/%Y %H:%M UTC') if not pd.isna(value) else 'No disponible'
-    st.caption(f"Corte: {fmt(cutoff)} · Creado: {fmt(created)}")
-    if pd.isna(cutoff):
-        st.warning("Antigüedad de los datos desconocida: falta una fecha de corte válida.")
-    else:
-        days = (pd.Timestamp.now(tz="UTC") - cutoff).total_seconds() / 86400
-        if days < 0:
-            st.warning("El corte de datos está en el futuro; revisa los metadatos.")
-        else:
-            st.caption(f"Antigüedad del corte: {days:.1f} días. "
-                       "Los resultados no se actualizan automáticamente con nuevos partidos.")
-    if pd.isna(created):
-        st.caption("Fecha de creación no disponible o inválida.")
-
-
 def main():
     st.set_page_config(page_title="Champions · Probabilidades", page_icon="⚽", layout="wide")
     st.markdown("""
     <style>
-      .block-container {padding-top: 2rem; padding-bottom: 3rem; max-width: 1500px;}
-      h1, h2, h3 {letter-spacing: -0.025em;}
-      [data-testid="stMetric"] {background: linear-gradient(135deg,#111827,#182235); border:1px solid #26344c; padding:1rem; border-radius:16px;}
-      [data-testid="stMetricLabel"], [data-testid="stMetricValue"] {color:#f8fafc;}
+      [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeader"] {display:none;}
+      .block-container {padding-top: 1.5rem; padding-bottom: 3rem; max-width: 1500px;}
+      h2, h3 {letter-spacing: -0.025em;}
       .rank-row {display:flex;align-items:center;gap:.65rem;min-height:48px;padding:.45rem .65rem;margin:.28rem 0;border:1px solid rgba(128,128,128,.22);border-radius:12px;background:rgba(128,128,128,.055)}
       .rank-row img {width:31px;height:31px;object-fit:contain;}
       .rank-number {width:1.7rem;font-weight:800;color:#8b9ab7;text-align:right;}
@@ -258,11 +227,7 @@ def main():
       .rank-points {font-size:.78rem;color:#8b9ab7;white-space:nowrap;}
     </style>
     """, unsafe_allow_html=True)
-    st.title("Champions 2026/27")
-    st.caption("Probabilidades del modelo y clasificación esperada · Champions masculina")
     root = Path(os.environ.get("CHAMPIONS_ROOT") or Path(__file__).resolve().parents[1]).expanduser().resolve()
-    st.sidebar.header("Ejecución")
-    st.sidebar.button("Actualizar lista", key="refresh")
     snapshots, issues = load_snapshots(root)
     for issue in issues:
         st.warning(issue)
@@ -278,32 +243,14 @@ def main():
                    "metadata.json y probabilities.csv. También puedes configurar CHAMPIONS_ROOT.")
         return
 
-    season = st.sidebar.selectbox("Temporada", sorted({m["season"] for m, _ in snapshots}, reverse=True), key="season")
+    season = max(m["season"] for m, _ in snapshots)
     season_runs = [(m, d) for m, d in snapshots if m["season"] == season]
-    day = st.sidebar.selectbox("Jornada", sorted({m["matchday"] for m, _ in season_runs}, reverse=True), key="matchday")
-    runs = {m["run_id"]: (m, d) for m, d in season_runs if m["matchday"] == day}
-    run = st.sidebar.selectbox("Ejecución", list(runs), key="run", format_func=lambda key:
-                               f"{runs[key][0].get('model', 'Modelo')} · {runs[key][0].get('simulations', '?')} sims · {key}")
-    meta, data = runs[run]
-    selected = st.sidebar.multiselect("Filtrar tabla", sorted(data.team), key="teams",
-                                      help="La clasificación y la evolución siempre muestran los 36 equipos.")
-    filtered = data[data.team.isin(selected)] if selected else data
-    if "champion" in filtered:
-        filtered = filtered.sort_values("champion", ascending=False)
-    card1, card2, card3, card4 = st.columns(4)
-    card1.metric("Temporada", season)
-    card2.metric("Jornada", day)
-    card3.metric("Simulaciones", format_integer(meta.get("simulations")))
-    card4.metric("Partidos jugados", format_integer(meta.get("known_results")))
-    freshness(meta)
-    warnings = meta.get("warnings") or []
-    if warnings:
-        with st.expander("Cobertura, supuestos y limitaciones del modelo", expanded=False):
-            for warning in warnings if isinstance(warnings, list) else [warnings]:
-                st.warning(str(warning))
+    _, data = season_runs[0]
+    if "champion" in data:
+        data = data.sort_values("champion", ascending=False)
     st.subheader("Probabilidades por equipo")
     st.caption("De campeón a eliminación: los hitos están ordenados de más difícil a más accesible. Probabilidades en %.")
-    render_table(filtered)
+    render_table(data)
     missing = [label for field, label in {**LABELS, **EXPECTED}.items() if field not in data]
     if missing:
         st.caption("Columnas no disponibles: " + ", ".join(missing))
@@ -332,19 +279,6 @@ def main():
         )
         st.plotly_chart(fig, width="stretch")
         st.caption("Cada línea es un equipo. Pasa el cursor por un punto para identificarlo; 1 es la mejor posición.")
-
-    with st.expander("Metodología y detalles técnicos", expanded=False):
-        st.markdown("**Incertidumbre Monte Carlo**: más simulaciones reducen el error numérico, pero no corrigen posibles sesgos del modelo.")
-        st.markdown("La **calibración del modelo** usa evaluación fuera de muestra para comprobar si las probabilidades se parecen a las frecuencias observadas.")
-        if meta.get("evaluation"):
-            st.json(meta["evaluation"])
-        else:
-            st.info("Sin evaluación registrada: no se puede determinar la calibración del modelo.")
-        st.json({field: meta.get(field) for field in (
-            "run_id", "season", "matchday", "cutoff", "created_at", "model",
-            "simulations", "seed", "coverage")})
-        st.caption(f"Origen local: {root / 'results' / 'snapshots' / run}")
-    st.caption("Estimaciones estadísticas condicionadas al modelo y a los datos disponibles.")
 
 
 if __name__ == "__main__":
