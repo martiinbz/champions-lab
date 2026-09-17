@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from champions.pipeline import as_of, training_data, sha256, write_json
+from champions.pipeline import as_of, training_data, sha256, validate_simulation_count, write_json
 
 
 def fixture():
@@ -49,6 +49,12 @@ def test_snapshot_hash_detects_changes(tmp_path):
 def test_reject_invalid_round():
     with pytest.raises(ValueError, match="jornada"):
         as_of(fixture(), "2026-09-16", matchday=9)
+
+
+def test_simulation_count_has_no_artificial_upper_limit():
+    assert validate_simulation_count(2_000_000) == 2_000_000
+    with pytest.raises(ValueError, match="al menos 100"):
+        validate_simulation_count(99)
 
 
 def prepared_inputs(root):

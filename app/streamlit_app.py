@@ -3,6 +3,9 @@
 Probabilities are fractions in [0, 1]. Missing optional fields stay missing.
 Run with ``streamlit run app/streamlit_app.py``.
 """
+import base64
+import hashlib
+import html
 import json
 import os
 from pathlib import Path
@@ -21,12 +24,28 @@ LABELS = {
     "final": "Final", "champion": "Campeón",
 }
 EXPECTED = {"expected_points": "Puntos esperados", "expected_rank": "Posición esperada"}
+PROBABILITY_ORDER = [
+    "champion", "final", "semifinal", "quarterfinal", "round16", "playoff",
+    "top8", "positions9_16", "positions17_24", "eliminated",
+]
+CREST_DIR = Path(__file__).resolve().parent / "assets" / "crests"
 
 
 def timestamp(value):
     if not isinstance(value, str) or not value.strip():
         return pd.NaT
     return pd.to_datetime(value, utc=True, errors="coerce")
+
+
+def format_integer(value):
+    """Format optional integral metadata without letting malformed runs break the UI."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return "—"
+    if not np.isfinite(number) or not number.is_integer():
+        return "—"
+    return f"{int(number):,}".replace(",", ".")
 
 
 def load_snapshots(root):
@@ -80,8 +99,7 @@ def load_snapshots(root):
 
 
 def probability_table(data):
-    priority = ["champion", "top8", "round16", "quarterfinal", "semifinal", "final", "playoff", "positions9_16", "positions17_24", "eliminated"]
-    result = data[["team", *[c for c in priority if c in data],
+    result = data[["team", *[c for c in PROBABILITY_ORDER if c in data],
                    *[c for c in EXPECTED if c in data]]].copy()
     for column in LABELS:
         if column in result:
@@ -89,14 +107,121 @@ def probability_table(data):
     return result.rename(columns={"team": "Equipo", **LABELS, **EXPECTED})
 
 
+def expected_ranking(data):
+    """Return the full projected league table in display order."""
+    if "expected_rank" not in data:
+        return pd.DataFrame(columns=["Puesto", "Equipo", "Posición esperada"])
+    columns = ["team", "expected_rank"]
+    if "expected_points" in data:
+        columns.append("expected_points")
+    ranking = data[columns].dropna(subset=["expected_rank"]).sort_values(
+        ["expected_rank", "team"], kind="stable").reset_index(drop=True)
+    ranking.insert(0, "Puesto", np.arange(1, len(ranking) + 1))
+    return ranking.rename(columns={"team": "Equipo", **EXPECTED})
+
+
+def expected_position_history(snapshots):
+    """Build one position row per team and unique input-data state."""
+    rows, selected = [], {}
+    ordered = sorted(snapshots, key=lambda item: (
+        timestamp(item[0].get("created_at")).value,
+        item[0].get("run_id", ""),
+    ))
+    for meta, data in ordered:
+        if "expected_rank" not in data:
+            continue
+        hashes = meta.get("data_hashes")
+        if isinstance(hashes, dict) and hashes:
+            key = ("data", tuple(sorted((str(name), str(digest))
+                                        for name, digest in hashes.items())))
+        else:
+            key = ("legacy", meta.get("cutoff"), meta.get("matchday"))
+        selected[key] = (meta, data)
+    selected_runs = sorted(selected.values(), key=lambda item: (
+        timestamp(item[0].get("cutoff")).value,
+        timestamp(item[0].get("created_at")).value,
+        item[0].get("run_id", ""),
+    ))
+    for meta, data in selected_runs:
+        for row in data[["team", "expected_rank"]].itertuples(index=False):
+            if pd.isna(row.expected_rank):
+                continue
+            rows.append({
+                "Equipo": row.team,
+                "Corte": timestamp(meta.get("cutoff")),
+                "Posición esperada": float(row.expected_rank),
+                "Jornada": int(meta.get("matchday", 0)),
+                "Ejecución": meta.get("run_id", ""),
+            })
+    return pd.DataFrame(rows, columns=[
+        "Equipo", "Corte", "Posición esperada", "Jornada", "Ejecución",
+    ])
+
+
+def crest_data_uri(team, crest_dir=CREST_DIR):
+    """Return a local crest as a data URI, or a deterministic offline badge."""
+    crest_root = Path(crest_dir).resolve()
+    mapping_path = crest_root / "team-crests.json"
+    if mapping_path.exists():
+        try:
+            filename = json.loads(mapping_path.read_text(encoding="utf-8")).get(team)
+            image_path = (crest_root / filename).resolve() if filename else None
+            if image_path and image_path.parent == crest_root and image_path.is_file():
+                mime = "image/svg+xml" if image_path.suffix.lower() == ".svg" else "image/png"
+                payload = base64.b64encode(image_path.read_bytes()).decode("ascii")
+                return f"data:{mime};base64,{payload}"
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+    initials = "".join(part[0] for part in str(team).replace("/", " ").split()[:3]).upper() or "?"
+    hue = int(hashlib.sha256(str(team).encode("utf-8")).hexdigest()[:4], 16) % 360
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+           f'<circle cx="32" cy="32" r="29" fill="hsl({hue} 58% 34%)" stroke="white" stroke-width="3"/>'
+           f'<text x="32" y="38" text-anchor="middle" font-family="Arial" font-size="18" '
+           f'font-weight="700" fill="white">{initials}</text></svg>')
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
+
+
 def render_table(data):
-    st.dataframe(probability_table(data), hide_index=True, width="stretch",
+    table = probability_table(data)
+    table["Escudo"] = table["Equipo"].map(crest_data_uri)
+    st.dataframe(table, hide_index=True, width="stretch", height=min(650, 42 + 35 * len(table)),
                  column_config={
+                     "Equipo": st.column_config.TextColumn("Equipo", pinned=True, width="medium"),
+                     "Escudo": st.column_config.ImageColumn("", width="small"),
                      **{name: st.column_config.NumberColumn(name, format="%.1f%%")
                         for name in LABELS.values()},
                      **{name: st.column_config.NumberColumn(name, format="%.1f")
                         for name in EXPECTED.values()},
                  })
+
+
+def render_expected_ranking(data):
+    ranking = expected_ranking(data)
+    if ranking.empty:
+        st.info("La posición esperada no está disponible en esta ejecución.")
+        return
+    if len(ranking) != 36:
+        st.warning(f"Clasificación incompleta: este snapshot contiene {len(ranking)} de 36 equipos.")
+        return
+    groups = [ranking.iloc[indexes] for indexes in np.array_split(np.arange(len(ranking)), 3)]
+    for column, group in zip(st.columns(3), groups):
+        with column:
+            for _, row in group.iterrows():
+                crest = crest_data_uri(row["Equipo"])
+                points = row.get("Puntos esperados")
+                points_html = (
+                    f'<span class="rank-points">{points:.1f} pts</span>'
+                    if pd.notna(points) else ""
+                )
+                st.markdown(
+                    '<div class="rank-row">'
+                    f'<span class="rank-number">{int(row["Puesto"])}</span>'
+                    f'<img src="{crest}" alt="" />'
+                    f'<span class="rank-team">{html.escape(row["Equipo"])}</span>'
+                    f'{points_html}'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
 
 
 def freshness(meta):
@@ -118,45 +243,25 @@ def freshness(meta):
         st.caption("Fecha de creación no disponible o inválida.")
 
 
-def detail(data, meta):
-    st.subheader("Detalle del equipo")
-    if data.empty:
-        st.info("Selecciona algún equipo para ver su detalle.")
-        return
-    team = st.selectbox("Equipo en detalle", data.team.tolist(), key="detail")
-    row = data.set_index("team").loc[team]
-    records = [{"Hito": label, "Probabilidad (%)": row[field] * 100}
-               for field, label in LABELS.items() if field in row and pd.notna(row[field])]
-    if not records:
-        st.info("No hay probabilidades disponibles para este equipo.")
-        return
-    values = pd.DataFrame(records)
-    # Wilson intervals retain nonzero width at p=0 and p=1.
-    try:
-        n = float(meta.get("simulations"))
-        valid_n = np.isfinite(n) and n > 0 and n.is_integer()
-    except (TypeError, ValueError, OverflowError):
-        valid_n = False
-    if valid_n:
-        p = values["Probabilidad (%)"] / 100
-        z = 1.959963984540054
-        center = (p + z*z/(2*n)) / (1 + z*z/n)
-        half = z * np.sqrt(p*(1-p)/n + z*z/(4*n*n)) / (1 + z*z/n)
-        values["MC 95% inferior (%)"] = (center - half).clip(0, 1) * 100
-        values["MC 95% superior (%)"] = (center + half).clip(0, 1) * 100
-    else:
-        st.info("Intervalos Monte Carlo no disponibles: número de simulaciones desconocido.")
-    st.dataframe(values, hide_index=True, width="stretch",
-                 column_config={c: st.column_config.NumberColumn(c, format="%.2f")
-                                for c in values.columns if c != "Hito"})
-
-
 def main():
     st.set_page_config(page_title="Champions · Probabilidades", page_icon="⚽", layout="wide")
-    st.title("Champions · Probabilidades")
-    st.caption("Una mirada a la competición, ejecución a ejecución. Resultados locales del modelo.")
+    st.markdown("""
+    <style>
+      .block-container {padding-top: 2rem; padding-bottom: 3rem; max-width: 1500px;}
+      h1, h2, h3 {letter-spacing: -0.025em;}
+      [data-testid="stMetric"] {background: linear-gradient(135deg,#111827,#182235); border:1px solid #26344c; padding:1rem; border-radius:16px;}
+      [data-testid="stMetricLabel"], [data-testid="stMetricValue"] {color:#f8fafc;}
+      .rank-row {display:flex;align-items:center;gap:.65rem;min-height:48px;padding:.45rem .65rem;margin:.28rem 0;border:1px solid rgba(128,128,128,.22);border-radius:12px;background:rgba(128,128,128,.055)}
+      .rank-row img {width:31px;height:31px;object-fit:contain;}
+      .rank-number {width:1.7rem;font-weight:800;color:#8b9ab7;text-align:right;}
+      .rank-team {font-weight:650;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .rank-points {font-size:.78rem;color:#8b9ab7;white-space:nowrap;}
+    </style>
+    """, unsafe_allow_html=True)
+    st.title("Champions 2026/27")
+    st.caption("Probabilidades del modelo y clasificación esperada · Champions masculina")
     root = Path(os.environ.get("CHAMPIONS_ROOT") or Path(__file__).resolve().parents[1]).expanduser().resolve()
-    st.sidebar.header("Explorar resultados")
+    st.sidebar.header("Ejecución")
     st.sidebar.button("Actualizar lista", key="refresh")
     snapshots, issues = load_snapshots(root)
     for issue in issues:
@@ -180,11 +285,16 @@ def main():
     run = st.sidebar.selectbox("Ejecución", list(runs), key="run", format_func=lambda key:
                                f"{runs[key][0].get('model', 'Modelo')} · {runs[key][0].get('simulations', '?')} sims · {key}")
     meta, data = runs[run]
-    selected = st.sidebar.multiselect("Filtrar equipos", sorted(data.team), key="teams",
-                                      help="Sin selección se muestran todos los equipos.")
+    selected = st.sidebar.multiselect("Filtrar tabla", sorted(data.team), key="teams",
+                                      help="La clasificación y la evolución siempre muestran los 36 equipos.")
     filtered = data[data.team.isin(selected)] if selected else data
     if "champion" in filtered:
         filtered = filtered.sort_values("champion", ascending=False)
+    card1, card2, card3, card4 = st.columns(4)
+    card1.metric("Temporada", season)
+    card2.metric("Jornada", day)
+    card3.metric("Simulaciones", format_integer(meta.get("simulations")))
+    card4.metric("Partidos jugados", format_integer(meta.get("known_results")))
     freshness(meta)
     warnings = meta.get("warnings") or []
     if warnings:
@@ -192,97 +302,47 @@ def main():
             for warning in warnings if isinstance(warnings, list) else [warnings]:
                 st.warning(str(warning))
     st.subheader("Probabilidades por equipo")
-    st.caption("Probabilidades en %. Haz clic en las cabeceras para ordenar. — indica un dato ausente.")
+    st.caption("De campeón a eliminación: los hitos están ordenados de más difícil a más accesible. Probabilidades en %.")
     render_table(filtered)
     missing = [label for field, label in {**LABELS, **EXPECTED}.items() if field not in data]
     if missing:
         st.caption("Columnas no disponibles: " + ", ".join(missing))
 
-    history_tab, detail_tab, comparison_tab, metadata_tab = st.tabs(
-        ["Evolución", "Detalle e incertidumbre", "Comparar ejecuciones", "Metadatos"])
-    with history_tab:
-        st.subheader("Evolución histórica")
-        metrics = [field for field in LABELS if any(field in d for _, d in season_runs)]
-        if metrics:
-            metric = st.selectbox("Probabilidad a seguir", metrics, format_func=LABELS.get, key="history_metric")
-            rows = []
-            chart_teams = selected or (data.nlargest(6, "champion").team.tolist() if "champion" in data else data.team.head(6).tolist())
-            seen_cuts = set()
-            for m, d in season_runs:
-                if metric not in d:
-                    continue
-                if m.get("cutoff") in seen_cuts:
-                    continue
-                seen_cuts.add(m.get("cutoff"))
-                for _, row in d.iterrows():
-                    if row.team not in chart_teams:
-                        continue
-                    rows.append({"Equipo": row.team, "Corte": timestamp(m.get("cutoff")),
-                                 "Probabilidad (%)": row[metric] * 100,
-                                 "Jornada": m["matchday"], "Ejecución": m["run_id"],
-                                 "Creación": timestamp(m.get("created_at"))})
-            history = pd.DataFrame(rows)
-            if not history.empty:
-                missing_dates = history.Corte.isna().any()
-                history = history.dropna(subset=["Corte"]).sort_values(["Corte", "Creación", "Ejecución"])
-                if missing_dates:
-                    st.caption("Se omiten del gráfico los cortes sin fecha válida.")
-                if not history.empty:
-                    fig = px.line(history, x="Corte", y="Probabilidad (%)", color="Equipo", markers=True,
-                                  hover_data=["Jornada", "Ejecución"], template="plotly_white")
-                    fig.update_layout(yaxis_range=[0, 100], legend_title_text="Equipo", hovermode="closest")
-                    st.plotly_chart(fig, width="stretch")
-                else:
-                    st.info("No hay fechas de corte válidas para dibujar la evolución.")
-            st.caption("Última ejecución de cada corte. Sin filtro se muestran los seis favoritos actuales; "
-                       "selecciona equipos en el lateral para compararlos. Los cambios también pueden reflejar distintas versiones del modelo.")
-        else:
-            st.info("No hay probabilidades disponibles para mostrar la evolución.")
-    with detail_tab:
-        st.markdown("**Incertidumbre Monte Carlo**: los intervalos Wilson del 95% estiman el error "
-                    "numérico por un número finito de simulaciones independientes, con el modelo fijo. "
-                    "Más simulaciones reducen este error; no garantizan mejores predicciones.")
-        st.markdown("**Calibración del modelo**: mide si las probabilidades concuerdan con frecuencias "
-                    "observadas en evaluación fuera de muestra. Los intervalos Monte Carlo no incluyen "
-                    "sesgos del modelo, cambios de equipos ni datos incompletos, y no acreditan calibración.")
-        detail(filtered, meta)
-        st.markdown("**Evaluación del modelo registrada**")
+    st.divider()
+    st.subheader("Clasificación esperada")
+    st.caption("Orden medio proyectado al terminar la fase liga para los 36 equipos.")
+    render_expected_ranking(data)
+
+    st.divider()
+    st.subheader("Evolución de la posición esperada")
+    history = expected_position_history(season_runs).dropna(subset=["Corte"])
+    if history.empty:
+        st.info("Se necesitan al menos dos snapshots con posición esperada para dibujar la evolución.")
+    else:
+        fig = px.line(
+            history, x="Corte", y="Posición esperada", color="Equipo", markers=True,
+            hover_data={"Jornada": True, "Ejecución": False, "Posición esperada": ":.1f"},
+            template="plotly_white",
+        )
+        fig.update_traces(line={"width": 1.55}, marker={"size": 5})
+        fig.update_layout(
+            height=680, showlegend=False, hovermode="closest", margin={"l": 35, "r": 20, "t": 15, "b": 35},
+            yaxis={"autorange": "reversed", "dtick": 2, "range": [36.5, .5], "title": "Posición esperada"},
+            xaxis={"title": None},
+        )
+        st.plotly_chart(fig, width="stretch")
+        st.caption("Cada línea es un equipo. Pasa el cursor por un punto para identificarlo; 1 es la mejor posición.")
+
+    with st.expander("Metodología y detalles técnicos", expanded=False):
+        st.markdown("**Incertidumbre Monte Carlo**: más simulaciones reducen el error numérico, pero no corrigen posibles sesgos del modelo.")
+        st.markdown("La **calibración del modelo** usa evaluación fuera de muestra para comprobar si las probabilidades se parecen a las frecuencias observadas.")
         if meta.get("evaluation"):
             st.json(meta["evaluation"])
         else:
             st.info("Sin evaluación registrada: no se puede determinar la calibración del modelo.")
-    with comparison_tab:
-        others = {m["run_id"]: (m, d) for m, d in season_runs if m["run_id"] != run}
-        if not others:
-            st.info("Se necesitan dos ejecuciones de la misma temporada para comparar.")
-        else:
-            baseline = st.selectbox("Ejecución de referencia", list(others), key="baseline")
-            base_meta, base_data = others[baseline]
-            common = [c for c in LABELS if c in data and c in base_data]
-            st.caption(f"Actual: {run} · corte {meta.get('cutoff', 'No disponible')} | "
-                       f"Referencia: {baseline} · corte {base_meta.get('cutoff', 'No disponible')}. "
-                       "Cambio = actual − referencia, en puntos porcentuales (pp).")
-            if meta.get("model") != base_meta.get("model"):
-                st.warning("Las ejecuciones utilizan modelos distintos; el cambio no se debe solo a nuevos resultados.")
-            if common:
-                metric = st.selectbox("Probabilidad a comparar", common, format_func=LABELS.get, key="compare_metric",
-                                      index=common.index("champion") if "champion" in common else 0)
-                comparison = data.set_index("team")[[metric]].rename(columns={metric: "Actual (%)"}).join(
-                    base_data.set_index("team")[[metric]].rename(columns={metric: "Referencia (%)"}), how="outer") * 100
-                if selected:
-                    comparison = comparison.loc[comparison.index.isin(selected)]
-                comparison["Cambio (pp)"] = comparison["Actual (%)"] - comparison["Referencia (%)"]
-                st.dataframe(comparison.rename_axis("Equipo").reset_index(), hide_index=True, width="stretch",
-                             column_config={c: st.column_config.NumberColumn(c, format="%.2f") for c in comparison})
-                st.caption("Un equipo ausente en una ejecución mantiene su valor vacío, sin asumir un 0%.")
-            else:
-                st.info("No hay columnas de probabilidad comunes entre estas ejecuciones.")
-    with metadata_tab:
-        st.subheader("Ficha de la ejecución")
-        st.caption("Modelo, simulaciones, semilla, cobertura y evaluación tal como los guardó el pipeline.")
         st.json({field: meta.get(field) for field in (
             "run_id", "season", "matchday", "cutoff", "created_at", "model",
-            "simulations", "seed", "warnings", "evaluation", "coverage")})
+            "simulations", "seed", "coverage")})
         st.caption(f"Origen local: {root / 'results' / 'snapshots' / run}")
     st.caption("Estimaciones estadísticas condicionadas al modelo y a los datos disponibles.")
 

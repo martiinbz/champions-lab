@@ -1,0 +1,146 @@
+{
+  "AEK Athens": {
+    "page": "https://en.wikipedia.org/wiki/AEK_Athens_F.C.",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/0/04/AEK_Athens_FC_logo.svg/330px-AEK_Athens_FC_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Arsenal": {
+    "page": "https://en.wikipedia.org/wiki/Arsenal_F.C.",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/5/53/Arsenal_FC.svg/330px-Arsenal_FC.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Aston Villa": {
+    "page": "https://en.wikipedia.org/wiki/Aston_Villa_F.C.",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/9/9a/Aston_Villa_FC_new_crest.svg/330px-Aston_Villa_FC_new_crest.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Atlético de Madrid": {
+    "page": "https://en.wikipedia.org/wiki/Atl%C3%A9tico_Madrid",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/f/f9/Atletico_Madrid_Logo_2024.svg/330px-Atletico_Madrid_Logo_2024.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Barcelona": {
+    "page": "https://en.wikipedia.org/wiki/FC_Barcelona",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/4/47/FC_Barcelona_%28crest%29.svg/330px-FC_Barcelona_%28crest%29.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Bayern München": {
+    "page": "https://en.wikipedia.org/wiki/FC_Bayern_Munich",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8d/FC_Bayern_M%C3%BCnchen_logo_%282024%29.svg/330px-FC_Bayern_M%C3%BCnchen_logo_%282024%29.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Bodø/Glimt": {
+    "page": "https://en.wikipedia.org/wiki/FK_Bod%C3%B8%2FGlimt",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/8/8d/FK_Bodo_Glimt_logo.svg/330px-FK_Bodo_Glimt_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Borussia Dortmund": {
+    "page": "https://en.wikipedia.org/wiki/Borussia_Dortmund",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/67/Borussia_Dortmund_logo.svg/330px-Borussia_Dortmund_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Club Brugge": {
+    "page": "https://en.wikipedia.org/wiki/Club_Brugge_KV",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/97/Club_brugge.png/330px-Club_brugge.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Como": {
+    "page": "https://en.wikipedia.org/wiki/Como_1907",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/99/Calcio_Como_-_logo_%28Italy%2C_2019-%29.svg/330px-Calcio_Como_-_logo_%28Italy%2C_2019-%29.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Fenerbahçe": {
+    "page": "https://en.wikipedia.org/wiki/Fenerbah%C3%A7e_S.K._(football)",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/3/39/Fenerbah%C3%A7e.svg/330px-Fenerbah%C3%A7e.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Feyenoord": {
+    "page": "https://en.wikipedia.org/wiki/Feyenoord",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f9/Feyenoord_logo_since_2024.svg/330px-Feyenoord_logo_since_2024.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Galatasaray": {
+    "page": "https://en.wikipedia.org/wiki/Galatasaray_S.K._(football)",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/4/49/Galatasaray_SK_football_logo.png/330px-Galatasaray_SK_football_logo.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Inter": {
+    "page": "https://en.wikipedia.org/wiki/Inter_Milan",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/FC_Internazionale_Milano_2021.svg/330px-FC_Internazionale_Milano_2021.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "LASK": {
+    "page": "https://en.wikipedia.org/wiki/LASK",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a2/LASK-Logo_2023.svg/330px-LASK-Logo_2023.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Leipzig": {
+    "page": "https://en.wikipedia.org/wiki/RB_Leipzig",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/0/04/RB_Leipzig_2014_logo.svg/330px-RB_Leipzig_2014_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Lens": {
+    "page": "https://en.wikipedia.org/wiki/RC_Lens",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/c/cc/RC_Lens_logo.svg/330px-RC_Lens_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Lille": {
+    "page": "https://en.wikipedia.org/wiki/Lille_OSC",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/3/3f/Lille_OSC_2018_logo.svg/330px-Lille_OSC_2018_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Liverpool": {
+    "page": "https://en.wikipedia.org/wiki/Liverpool_F.C.",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/330px-Liverpool_FC.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Manchester City": {
+    "page": "https://en.wikipedia.org/wiki/Manchester_City_F.C.",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/e/eb/Manchester_City_FC_badge.svg/330px-Manchester_City_FC_badge.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Manchester United": {
+    "page": "https://en.wikipedia.org/wiki/Manchester_United_F.C.",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/7/7a/Manchester_United_FC_crest.svg/330px-Manchester_United_FC_crest.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Napoli": {
+    "page": "https://en.wikipedia.org/wiki/SSC_Napoli",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4d/SSC_Napoli_2025_%28white_and_azure%29.svg/330px-SSC_Napoli_2025_%28white_and_azure%29.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "PSV Eindhoven": {
+    "page": "https://en.wikipedia.org/wiki/PSV_Eindhoven",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/0/05/PSV_Eindhoven.svg/330px-PSV_Eindhoven.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Paris Saint-Germain": {
+    "page": "https://en.wikipedia.org/wiki/Paris_Saint-Germain_FC",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/a/a7/Paris_Saint-Germain_F.C..svg/330px-Paris_Saint-Germain_F.C..svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Porto": {
+    "page": "https://en.wikipedia.org/wiki/FC_Porto",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/f/f1/FC_Porto.svg/330px-FC_Porto.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Real Betis": {
+    "page": "https://en.wikipedia.org/wiki/Real_Betis",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/2/2f/Real_Betis_2022_logo.svg/330px-Real_Betis_2022_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Real Madrid": {
+    "page": "https://en.wikipedia.org/wiki/Real_Madrid_CF",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/5/56/Real_Madrid_CF.svg/330px-Real_Madrid_CF.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Roma": {
+    "page": "https://en.wikipedia.org/wiki/AS_Roma",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/f/f7/AS_Roma_logo_%282017%29.svg/330px-AS_Roma_logo_%282017%29.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Sabah": {
+    "page": "https://en.wikipedia.org/wiki/Sabah_FK_(Azerbaijan)",
+    "image": "https://upload.wikimedia.org/wikipedia/en/a/a9/Sabah_FC_%28Azerbaijan%29.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail_unscaled"
+  },
+  "Shakhtar Donetsk": {
+    "page": "https://en.wikipedia.org/wiki/FC_Shakhtar_Donetsk",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/a/a1/FC_Shakhtar_Donetsk.svg/330px-FC_Shakhtar_Donetsk.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Slavia Praha": {
+    "page": "https://en.wikipedia.org/wiki/SK_Slavia_Prague",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2b/SK_Slavia_Praha_full_logo.svg/330px-SK_Slavia_Praha_full_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Slovan Bratislava": {
+    "page": "https://en.wikipedia.org/wiki/%C5%A0K_Slovan_Bratislava",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/01/SK_Slovan_Bratislava_logo.svg/330px-SK_Slovan_Bratislava_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Sporting CP": {
+    "page": "https://en.wikipedia.org/wiki/Sporting_CP",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e7/Sporting_Clube_de_Portugal_2026.svg/330px-Sporting_Clube_de_Portugal_2026.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Stuttgart": {
+    "page": "https://en.wikipedia.org/wiki/VfB_Stuttgart",
+    "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/eb/VfB_Stuttgart_1893_Logo.svg/330px-VfB_Stuttgart_1893_Logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Viking": {
+    "page": "https://en.wikipedia.org/wiki/Viking_FK",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/1/13/Viking_FK_logo_2020.svg/330px-Viking_FK_logo_2020.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  },
+  "Villarreal": {
+    "page": "https://en.wikipedia.org/wiki/Villarreal_CF",
+    "image": "https://thumb.wikimedia.org/wikipedia/en/thumb/b/b9/Villarreal_CF_logo-en.svg/330px-Villarreal_CF_logo-en.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
+  }
+}

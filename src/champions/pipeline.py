@@ -33,6 +33,13 @@ def utc(value: str) -> pd.Timestamp:
     return stamp.tz_convert("UTC")
 
 
+def validate_simulation_count(value: int) -> int:
+    """Validate a batch-safe Monte Carlo count without an arbitrary upper cap."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)) or value < 100:
+        raise ValueError("Se requieren al menos 100 simulaciones.")
+    return int(value)
+
+
 def as_of(fixtures: pd.DataFrame, cutoff: str, matchday: int | None = None) -> pd.DataFrame:
     """Mask results not yet knowable, including partially played matchdays.
 
@@ -111,8 +118,7 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
     from champions.models import GoalModel
     from champions.evaluation import evaluate_models
     from champions.simulation import simulate
-    if simulations < 100 or simulations > 1_000_000:
-        raise ValueError("Usa entre 100 y 1.000.000 simulaciones.")
+    simulations = validate_simulation_count(simulations)
     if utc(cutoff) > pd.Timestamp.now(tz="UTC"):
         raise ValueError("El corte no puede ser futuro: todavía no existen esos datos.")
     inputs = root / "data" / "processed"

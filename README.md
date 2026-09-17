@@ -17,6 +17,14 @@ python -m streamlit run app/streamlit_app.py
 
 Con Python y las dependencias instaladas también puedes abrir `Abrir-dashboard.cmd`. La carpeta `ML CHAMPIONS` del Escritorio enlaza a esta misma copia del proyecto para evitar tener dos versiones divergentes.
 
+Para lanzar una simulación nueva con el número de repeticiones que quieras, usando los datos ya descargados:
+
+```powershell
+.\Nueva-simulacion.ps1 -Simulaciones 200000
+```
+
+Puedes cambiar también la semilla con `-Semilla 123`. El motor trabaja por lotes, por lo que aumentar las simulaciones incrementa sobre todo el tiempo de cálculo, no la memoria de forma proporcional.
+
 ## Después de cada jornada
 
 ```powershell
@@ -25,7 +33,7 @@ Con Python y las dependencias instaladas también puedes abrir `Abrir-dashboard.
 
 O ejecuta `update` y `simulate` por separado. La actualización es bajo demanda y consulta de nuevo las fuentes; abrir el dashboard no hace descargas. Cada simulación crea un directorio nuevo. No se sobrescriben las probabilidades de semanas anteriores.
 
-Para una reconstrucción histórica, usa un corte UTC explícito:
+`Actualizar-jornada.ps1` descarga los datos nuevos y después simula. `Nueva-simulacion.ps1` solo vuelve a simular los datos locales actuales. Para una reconstrucción histórica, usa un corte UTC explícito:
 
 ```powershell
 python -m champions.cli simulate --cutoff 2026-09-08T00:00:00Z --matchday 0 --simulations 20000
@@ -42,7 +50,7 @@ Una reconstrucción usa la versión de datos disponible al descargar: no equival
 - Puestos 9–16 y 17–24: dos grupos del playoff. `playoff` es la probabilidad de acabar 9–24, **no** la de disputar octavos.
 - Eliminación en fase liga: puestos 25–36.
 - Alcanzar octavos, cuartos, semifinales, final y ser campeón.
-- Puntos/posición esperados, evolución por corte y comparación de ejecuciones.
+- Puntos y posición esperados, clasificación proyectada completa del 1 al 36 y evolución de la posición por corte.
 
 Las columnas de rondas son acumulativas; no deben sumar 100% entre sí. Las categorías top 8 / 9–16 / 17–24 / eliminado sí forman una partición. El error Monte Carlo solo mide precisión numérica de la simulación; no mide todos los errores del modelo.
 

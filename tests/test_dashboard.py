@@ -1,5 +1,6 @@
 """Dashboard integration tests using only temporary, local snapshots."""
 import json
+import importlib.util
 from pathlib import Path
 
 import pandas as pd
@@ -8,6 +9,13 @@ from streamlit.testing.v1 import AppTest
 
 
 APP = Path(__file__).resolve().parents[1] / "app" / "streamlit_app.py"
+
+
+def dashboard_module():
+    spec = importlib.util.spec_from_file_location("champions_dashboard", APP)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def snapshot(root, run="run-1", season="2026/27", day=1, probability=.2,
@@ -54,12 +62,90 @@ def test_empty_state_has_commands_without_percentages(root):
     assert not app.metric
 
 
+def test_probability_columns_follow_tournament_from_hardest_to_easiest():
+    dashboard = dashboard_module()
+    row = {"team": "Barcelona", **{name: .1 for name in dashboard.LABELS},
+           "expected_points": 18.2, "expected_rank": 3.4}
+    table = dashboard.probability_table(pd.DataFrame([row]))
+    assert table.columns.tolist() == [
+        "Equipo", "Campeón", "Final", "Semifinal", "Cuartos", "Octavos",
+        "Playoff", "Top 8", "Puestos 9–16", "Puestos 17–24", "Eliminado",
+        "Puntos esperados", "Posición esperada",
+    ]
+
+
+def test_expected_ranking_orders_every_team_and_numbers_the_places():
+    dashboard = dashboard_module()
+    data = pd.DataFrame({
+        "team": ["Tercero", "Primero", "Segundo"],
+        "expected_rank": [3.1, 1.2, 2.4],
+        "expected_points": [10, 14, 12],
+    })
+    ranking = dashboard.expected_ranking(data)
+    assert ranking["Equipo"].tolist() == ["Primero", "Segundo", "Tercero"]
+    assert ranking["Puesto"].tolist() == [1, 2, 3]
+
+
+def test_expected_position_history_contains_all_teams_and_snapshots():
+    dashboard = dashboard_module()
+    runs = [
+        ({"run_id": "a", "matchday": 0, "cutoff": "2026-09-01T00:00:00Z",
+          "created_at": "2026-09-01T01:00:00Z"},
+         pd.DataFrame({"team": ["A", "B"], "expected_rank": [1.5, 2.5]})),
+        ({"run_id": "b", "matchday": 1, "cutoff": "2026-09-10T00:00:00Z",
+          "created_at": "2026-09-10T01:00:00Z"},
+         pd.DataFrame({"team": ["A", "B"], "expected_rank": [2.1, 1.9]})),
+    ]
+    history = dashboard.expected_position_history(runs)
+    assert set(history["Equipo"]) == {"A", "B"}
+    assert len(history) == 4
+    assert history["Posición esperada"].tolist() == [1.5, 2.5, 2.1, 1.9]
+
+
+def test_expected_position_history_collapses_reruns_of_same_data_state():
+    dashboard = dashboard_module()
+    runs = [
+        ({"run_id": "old", "matchday": 1, "cutoff": "2026-09-10T00:00:00Z",
+          "created_at": "2026-09-10T01:00:00Z", "data_hashes": {"fixtures.csv": "same"}},
+         pd.DataFrame({"team": ["A"], "expected_rank": [2.1]})),
+        ({"run_id": "new", "matchday": 1, "cutoff": "2026-09-09T00:00:00Z",
+          "created_at": "2026-09-11T01:00:00Z", "data_hashes": {"fixtures.csv": "same"}},
+         pd.DataFrame({"team": ["A"], "expected_rank": [1.9]})),
+    ]
+    history = dashboard.expected_position_history(runs)
+    assert len(history) == 1
+    assert history.iloc[0]["Ejecución"] == "new"
+
+
+def test_crest_uri_is_local_and_has_deterministic_fallback(tmp_path):
+    dashboard = dashboard_module()
+    first = dashboard.crest_data_uri("Equipo inventado", tmp_path)
+    second = dashboard.crest_data_uri("Equipo inventado", tmp_path)
+    assert first == second
+    assert first.startswith("data:image/svg+xml;base64,")
+
+
+def test_every_current_team_has_a_local_crest_file():
+    from champions.data import CURRENT_TEAMS
+
+    crest_dir = APP.parent / "assets" / "crests"
+    mapping = json.loads((crest_dir / "team-crests.json").read_text(encoding="utf-8"))
+    assert set(mapping) == set(CURRENT_TEAMS)
+    assert all((crest_dir / filename).is_file() for filename in mapping.values())
+    assert all(dashboard_module().crest_data_uri(team).startswith("data:image/png;base64,")
+               for team in CURRENT_TEAMS)
+    sources = json.loads((crest_dir / "sources.json").read_text(encoding="utf-8"))
+    assert all(source["page"] and source["image"] for source in sources.values())
+
+
 def test_contract_labels_freshness_metadata_and_uncertainty(root):
     snapshot(root)
     app = start()
     table = app.dataframe[0].value
     assert table.loc[0, "Equipo"] == "Real Madrid"
     assert table.loc[0, "Campeón"] == pytest.approx(20)
+    assert table.columns[1] == "Campeón"
+    assert table.columns[-1] == "Escudo"
     assert "Puestos 17–24" in table
     text = " ".join(x.value for x in app.caption) + " ".join(x.value for x in app.markdown)
     assert "01/09/2026" in text
@@ -68,7 +154,7 @@ def test_contract_labels_freshness_metadata_and_uncertainty(root):
     assert app.json
 
 
-def test_selectors_filter_history_and_comparison(root):
+def test_selectors_filter_table_but_keep_history_and_ranking(root):
     snapshot(root)
     snapshot(root, "run-2", day=2, probability=.3)
     snapshot(root, "run-3", season="2025/26", day=8)
@@ -78,8 +164,7 @@ def test_selectors_filter_history_and_comparison(root):
     app.multiselect(key="teams").set_value(["Real Madrid"]).run()
     assert len(app.dataframe[0].value) == 1
     assert app.get("plotly_chart")
-    comparison = app.dataframe[-1].value
-    assert comparison.loc[0, "Cambio (pp)"] == pytest.approx(10)
+    assert any("2 de 36" in item.value for item in app.warning)
     app.selectbox(key="matchday").set_value(1).run()
     assert app.selectbox(key="run").value == "run-1"
     app.selectbox(key="season").set_value("2025/26").run()
@@ -146,25 +231,33 @@ def test_missing_optional_metadata_is_explicit(root):
     app = start()
     assert any("Antigüedad" in x.value for x in app.warning)
     assert any("Sin evaluación" in x.value for x in app.info)
-    assert any("Intervalos Monte Carlo no disponibles" in x.value for x in app.info)
 
 
-def test_multiple_runs_same_day_and_absent_team_comparison(root):
+def test_null_optional_metadata_does_not_break_dashboard(root):
+    folder = snapshot(root)
+    metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
+    metadata["simulations"] = None
+    metadata["known_results"] = "desconocido"
+    (folder / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    app = start()
+    assert not app.exception
+    assert [metric.value for metric in app.metric][2:] == ["—", "—"]
+
+
+def test_multiple_runs_same_day_and_absent_team(root):
     snapshot(root)
     folder = snapshot(root, "run-2", probability=.3)
     data = pd.read_csv(folder / "probabilities.csv")
     data[data.team == "Barcelona"].to_csv(folder / "probabilities.csv", index=False)
     app = start()
     assert app.selectbox(key="run").value == "run-2"
-    comparison = app.dataframe[-1].value.set_index("Equipo")
-    assert pd.isna(comparison.loc["Real Madrid", "Actual (%)"])
-    assert pd.isna(comparison.loc["Real Madrid", "Cambio (pp)"])
+    assert app.dataframe[0].value["Equipo"].tolist() == ["Barcelona"]
     app.selectbox(key="run").set_value("run-1").run()
     assert not app.exception
     assert len(app.dataframe[0].value) == 2
 
 
-def test_offline_and_wilson_interval_at_zero(root, monkeypatch):
+def test_offline_dashboard_and_local_crest_at_zero(root, monkeypatch):
     import socket
 
     def forbidden(*args, **kwargs):
@@ -173,7 +266,6 @@ def test_offline_and_wilson_interval_at_zero(root, monkeypatch):
     snapshot(root, probability=0)
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     app = start()
-    app.selectbox(key="detail").select("Real Madrid").run()
-    detail = app.dataframe[1].value.set_index("Hito")
-    assert detail.loc["Campeón", "Probabilidad (%)"] == 0
-    assert detail.loc["Campeón", "MC 95% superior (%)"] > 0
+    table = app.dataframe[0].value.set_index("Equipo")
+    assert table.loc["Real Madrid", "Campeón"] == 0
+    assert table.loc["Real Madrid", "Escudo"].startswith("data:image/")
