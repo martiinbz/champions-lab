@@ -112,8 +112,78 @@ def test_openfootball_regulation_score_and_year_rollover():
     assert result[1]['date'].startswith('2026-01-21')
 
 
+def test_history_columns_append_optional_free_source_fields():
+    assert data.HISTORY_COLUMNS == [
+        'date', 'home', 'away', 'home_goals', 'away_goals', 'competition', 'source',
+        'home_shots', 'away_shots', 'home_shots_on_target', 'away_shots_on_target',
+        'odds_home', 'odds_draw', 'odds_away', 'odds_provider', 'odds_semantics',
+        'home_xg', 'away_xg',
+    ]
+
+
+def test_parse_football_data_retains_match_statistics_and_bet365_odds():
+    text = '''Date,HomeTeam,AwayTeam,FTHG,FTAG,HS,AS,HST,AST,B365H,B365D,B365A
+01/09/2026,Arsenal,Chelsea,2,1,15,8,7,3,1.8,3.7,4.2
+'''
+
+    frame = data._parse_football_data(text, 'E0', 'test-source')
+
+    row = frame.iloc[0]
+    assert row[['home_shots', 'away_shots', 'home_shots_on_target',
+                'away_shots_on_target']].tolist() == [15, 8, 7, 3]
+    assert row[['odds_home', 'odds_draw', 'odds_away']].tolist() == [1.8, 3.7, 4.2]
+    assert row['odds_provider'] == 'Bet365'
+    assert row['odds_semantics'] == 'football-data closing odds; research only'
+    assert pd.isna(row['home_xg'])
+    assert pd.isna(row['away_xg'])
+
+
+def test_parse_football_data_without_bet365_columns_keeps_odds_missing():
+    text = '''Date,HomeTeam,AwayTeam,FTHG,FTAG,HS,AS,HST,AST
+01/09/2026,Arsenal,Chelsea,2,1,15,8,7,3
+'''
+
+    row = data._parse_football_data(text, 'E0', 'test-source').iloc[0]
+
+    assert pd.isna(row['odds_home'])
+    assert pd.isna(row['odds_draw'])
+    assert pd.isna(row['odds_away'])
+    assert pd.isna(row['odds_provider'])
+    assert pd.isna(row['odds_semantics'])
+
+
+def test_openfootball_initializes_optional_history_fields_as_missing():
+    text = '''Tue Dec 9 2025
+Arsenal FC (ENG) v FC Barcelona (ESP) 2-1
+'''
+
+    row = data._parse_openfootball(text, 'test-source', 'UCL', 2025)[0]
+
+    assert set(row) == set(data.HISTORY_COLUMNS)
+    assert all(pd.isna(row[column]) for column in data.OPTIONAL_HISTORY_COLUMNS)
+
+
 def test_history_rejects_invalid_results():
     frame = pd.DataFrame([dict(date='2025-01-01T00:00:00Z', home='Arsenal',
         away='Barcelona', home_goals=1.5, away_goals=0, competition='UCL', source='test')])
     with pytest.raises(ValueError):
         data.validate_history(frame)
+
+
+@pytest.mark.parametrize('value', [-1, float('inf'), float('-inf')])
+def test_history_rejects_invalid_supplied_optional_numeric_values(value):
+    frame = pd.DataFrame([dict(date='2025-01-01T00:00:00Z', home='Arsenal',
+        away='Barcelona', home_goals=1, away_goals=0, competition='UCL', source='test',
+        home_shots=value)])
+
+    with pytest.raises(ValueError):
+        data.validate_history(frame)
+
+
+def test_history_allows_missing_optional_columns_and_nullable_values():
+    frame = pd.DataFrame([dict(date='2025-01-01T00:00:00Z', home='Arsenal',
+        away='Barcelona', home_goals=1, away_goals=0, competition='UCL', source='test',
+        home_shots=pd.NA, odds_home=None, home_xg=float('nan'))])
+
+    data.validate_history(frame)
+    assert pd.isna(frame.loc[0, 'home_shots'])
