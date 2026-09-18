@@ -311,7 +311,7 @@ def _parse_football_data(text: str, competition: str, source: str) -> pd.DataFra
     for column in OPTIONAL_HISTORY_COLUMNS:
         if column not in table:
             table[column] = pd.NA
-    has_bet365_odds = table[['odds_home', 'odds_draw', 'odds_away']].notna().any(axis=1)
+    has_bet365_odds = table[['odds_home', 'odds_draw', 'odds_away']].notna().all(axis=1)
     table['odds_provider'] = table['odds_provider'].where(~has_bet365_odds, 'Bet365')
     table['odds_semantics'] = table['odds_semantics'].where(
         ~has_bet365_odds, 'football-data closing odds; research only')

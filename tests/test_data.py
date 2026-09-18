@@ -152,6 +152,17 @@ def test_parse_football_data_without_bet365_columns_keeps_odds_missing():
     assert pd.isna(row['odds_semantics'])
 
 
+def test_parse_football_data_does_not_label_incomplete_odds_as_bet365():
+    text = '''Date,HomeTeam,AwayTeam,FTHG,FTAG,B365H,B365D,B365A
+01/09/2026,Arsenal,Chelsea,2,1,1.8,,4.2
+'''
+
+    row = data._parse_football_data(text, 'E0', 'test-source').iloc[0]
+
+    assert pd.isna(row['odds_provider'])
+    assert pd.isna(row['odds_semantics'])
+
+
 def test_openfootball_initializes_optional_history_fields_as_missing():
     text = '''Tue Dec 9 2025
 Arsenal FC (ENG) v FC Barcelona (ESP) 2-1
