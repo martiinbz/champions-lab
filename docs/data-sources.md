@@ -19,7 +19,7 @@ Los cruces europeos conectan los equipos de las ligas nacionales. El validador e
 
 No están disponibles en esa fuente las fases principales Europa/Conference 2025/26. Tampoco se dispone de la misma profundidad doméstica para todos los países. Sabah y Shakhtar, por ejemplo, tienen una muestra menor y dependen más de la regularización. La cobertura completa del calendario no equivale a una cobertura exhaustiva de la trayectoria de cada club.
 
-Los goles son de 90 minutos. Un resultado con prórroga se incorpora solo si consta explícitamente el marcador al final de los 90 minutos. Los datos sin hora se sitúan conservadoramente al final del día UTC. Las fuentes no suministran uniformemente lesiones, alineaciones, xG ni todas las tarjetas de jugadores y oficiales, por lo que no se inventan esas variables.
+Los goles son de 90 minutos. Un resultado con prórroga se incorpora solo si consta explícitamente el marcador al final de los 90 minutos. Los CSV de Football-Data pueden conservar tiros, tiros a puerta y cuotas Bet365 de cierre como campos opcionales; valores ausentes siguen siendo nulos. Son datos de investigación posteriores al partido y no se usan como variables prepartido. Los datos sin hora se sitúan conservadoramente al final del día UTC. Las fuentes no suministran uniformemente lesiones, alineaciones, xG actual ni todas las tarjetas de jugadores y oficiales; `home_xg` y `away_xg` se reservan nulos para un proveedor fiable futuro y no se inventan esas variables.
 
 ## Snapshots y fallos
 

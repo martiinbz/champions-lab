@@ -17,7 +17,7 @@ def main():
     forecast.add_argument("--matchday", type=int, default=None)
     forecast.add_argument("--simulations", type=int, default=10000)
     forecast.add_argument("--seed", type=int, default=42)
-    forecast.add_argument("--model", choices=["auto", "poisson", "baseline"], default="auto")
+    forecast.add_argument("--model", choices=["auto", "poisson", "baseline", "dixon_coles", "ensemble"], default="auto")
     forecast.add_argument("--skip-evaluation", action="store_true")
     forecast.add_argument("--knockout", type=Path, help="JSON del cuadro oficial y partidos de eliminatorias ya conocidos")
     replay = commands.add_parser("reproduce", help="Verificar hashes y reproducir una ejecución")
