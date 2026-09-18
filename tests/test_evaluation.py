@@ -16,6 +16,8 @@ def test_final_block_cannot_change_model_selection():
     report = evaluate_rolling(frame, "2022-01-01")
     assert report["status"] == "ok"
     assert len(report["folds"]) == 3
+    assert report["promotion"]["minimum_log_loss_improvement"] == pytest.approx(.005)
+    assert set(report["folds"][0]["models"]) == {"poisson", "baseline", "dixon_coles", "ensemble"}
     frame.loc[360:, ["home_goals", "away_goals"]] = [9, 0]
     perturbed = evaluate_rolling(frame, "2022-01-01")
     assert report["selected_model"] == perturbed["selected_model"]
