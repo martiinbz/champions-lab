@@ -4,6 +4,22 @@ import pytest
 from champions.pipeline import as_of, training_data, sha256, validate_simulation_count, write_json
 
 
+def test_fit_production_model_supports_dixon_coles_and_ensemble():
+    from champions.pipeline import fit_production_model
+    history = pd.DataFrame([
+        {"date": "2025-01-01T00:00:00Z", "home": "A", "away": "B", "home_goals": 1, "away_goals": 0,
+         "competition": "E0", "source": "test"},
+        {"date": "2025-01-02T00:00:00Z", "home": "B", "away": "A", "home_goals": 0, "away_goals": 2,
+         "competition": "E0", "source": "test"},
+    ])
+
+    dixon = fit_production_model(history, "2026-01-01", {"selected_model": "dixon_coles"})
+    ensemble = fit_production_model(history, "2026-01-01", {"selected_model": "ensemble", "ensemble_weights": [.5, .5]})
+
+    assert type(dixon).__name__ == "DixonColesModel"
+    assert type(ensemble).__name__ == "EnsembleModel"
+
+
 def fixture():
     return pd.DataFrame([
         {"date": "2026-09-08T19:00:00Z", "matchday": 1, "home": "A", "away": "B", "home_goals": 1, "away_goals": 0, "status": "finished"},

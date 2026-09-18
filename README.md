@@ -33,7 +33,7 @@ Puedes cambiar también la semilla con `-Semilla 123`. El motor trabaja por lote
 
 O ejecuta `update` y `simulate` por separado. La actualización es bajo demanda y consulta de nuevo las fuentes; abrir el dashboard no hace descargas. Cada simulación crea un directorio nuevo. No se sobrescriben las probabilidades de semanas anteriores.
 
-`Actualizar-jornada.ps1` descarga los datos nuevos y después simula. `Nueva-simulacion.ps1` solo vuelve a simular los datos locales actuales. Para una reconstrucción histórica, usa un corte UTC explícito:
+`Actualizar-jornada.ps1` descarga los datos nuevos, reconstruye Elo/fuerza de liga, revalida los modelos y después simula. `Nueva-simulacion.ps1` solo vuelve a simular los datos locales actuales. Para una reconstrucción histórica, usa un corte UTC explícito:
 
 ```powershell
 python -m champions.cli simulate --cutoff 2026-09-08T00:00:00Z --matchday 0 --simulations 20000
@@ -56,9 +56,9 @@ Las columnas de rondas son acumulativas; no deben sumar 100% entre sí. Las cate
 
 ## Modelos y datos
 
-El modelo de goles aprende fuerza ofensiva y defensiva y ventaja local con regularización y recencia. Se contrasta con un baseline mediante validación temporal y métricas probabilísticas. La documentación de fuentes y modelos se encuentra en `docs/`.
+El modelo conserva Poisson regularizado como referencia y añade Elo dinámico, fuerza de ligas aprendida de cruces europeos y Dixon–Coles para correlaciones de marcadores bajos. Usa sólo resultados gratuitos de UEFA, Football-Data.co.uk y OpenFootball; tiros y cuotas se guardan como campos opcionales de investigación y nunca entran como información prepartido. No hay un feed gratuito y fiable de xG actual: sus campos quedan preparados pero nulos.
 
-Por defecto, `--model auto` elige entre Poisson y baseline con bloques temporales de Champions; reserva un bloque posterior para evaluación. Puedes fijar `--model poisson` o `--model baseline` para compararlos. No se supone que una métrica obtenida en pocos partidos garantice resultados futuros.
+Por defecto, `--model auto` compara Poisson, baseline, Dixon–Coles y una mezcla Poisson/Dixon–Coles con bloques temporales de Champions. Sólo promociona una alternativa si mejora el log loss de selección por al menos 0,005; el último bloque queda reservado para evaluación y no cambia la elección. Puedes fijar `--model poisson`, `--model baseline` o `--model dixon_coles`. No se supone que una métrica obtenida en pocos partidos garantice resultados futuros.
 
 Tras el sorteo de eliminatorias, el motor permite incorporar el cuadro y resultados oficiales con `--knockout RUTA_JSON`; consulta [el esquema](docs/knockout-state.md). La fuente automática actual descarga la fase liga: el cuadro posterior se importa explícitamente cuando exista.
 

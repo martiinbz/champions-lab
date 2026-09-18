@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from hashlib import sha256
 from io import StringIO
 import json
+import math
 from pathlib import Path
 import re
 import ssl
@@ -21,7 +22,17 @@ from bs4 import BeautifulSoup
 UEFA_URL = 'https://www.uefa.com/uefachampionsleague/news/02a8-2174c9e9019d-f909a77bd77a-1000--2026-27-champions-league-all-the-league-phase-fixtures/'
 CURRENT_TEAMS = frozenset('AEK Athens|Arsenal|Aston Villa|Atlético de Madrid|Barcelona|Bayern München|Bodø/Glimt|Borussia Dortmund|Club Brugge|Como|Fenerbahçe|Feyenoord|Galatasaray|Inter|LASK|Leipzig|Lens|Lille|Liverpool|Manchester City|Manchester United|Napoli|Paris Saint-Germain|Porto|PSV Eindhoven|Real Betis|Real Madrid|Roma|Sabah|Shakhtar Donetsk|Slavia Praha|Slovan Bratislava|Sporting CP|Stuttgart|Viking|Villarreal'.split('|'))
 FIXTURE_COLUMNS = ['match_id', 'date', 'season', 'stage', 'matchday', 'home', 'away', 'home_goals', 'away_goals', 'status', 'source']
-HISTORY_COLUMNS = ['date', 'home', 'away', 'home_goals', 'away_goals', 'competition', 'source']
+CORE_HISTORY_COLUMNS = ['date', 'home', 'away', 'home_goals', 'away_goals', 'competition', 'source']
+OPTIONAL_HISTORY_COLUMNS = [
+    'home_shots', 'away_shots', 'home_shots_on_target', 'away_shots_on_target',
+    'odds_home', 'odds_draw', 'odds_away', 'odds_provider', 'odds_semantics',
+    'home_xg', 'away_xg',
+]
+HISTORY_COLUMNS = CORE_HISTORY_COLUMNS + OPTIONAL_HISTORY_COLUMNS
+OPTIONAL_HISTORY_NUMERIC_COLUMNS = [
+    'home_shots', 'away_shots', 'home_shots_on_target', 'away_shots_on_target',
+    'odds_home', 'odds_draw', 'odds_away', 'home_xg', 'away_xg',
+]
 ALIASES = {
     'Man City': 'Manchester City', 'Manchester City FC': 'Manchester City',
     'Man United': 'Manchester United', 'Manchester United FC': 'Manchester United',
@@ -270,16 +281,56 @@ def _parse_openfootball(text: str, source: str, competition: str, start_year: in
             if regulation is None:
                 continue  # Never use extra-time/penalty totals as 90-minute goals.
             hg, ag = regulation.groups()
-        rows.append(dict(date=date.strftime('%Y-%m-%dT%H:%M:%SZ'), home=normalize_team(home),
-            away=normalize_team(away), home_goals=int(hg), away_goals=int(ag), competition=competition, source=source))
+        row = dict(date=date.strftime('%Y-%m-%dT%H:%M:%SZ'), home=normalize_team(home),
+            away=normalize_team(away), home_goals=int(hg), away_goals=int(ag), competition=competition, source=source)
+        row.update({column: None for column in OPTIONAL_HISTORY_COLUMNS})
+        rows.append(row)
     if not rows:
         raise ValueError(f'No scored matches parsed: {source}')
     return rows
 
 
+def _parse_football_data(text: str, competition: str, source: str) -> pd.DataFrame:
+    table = pd.read_csv(StringIO(text)).rename(columns={
+        'HomeTeam': 'home', 'AwayTeam': 'away', 'Home': 'home', 'Away': 'away',
+        'FTHG': 'home_goals', 'FTAG': 'away_goals', 'HG': 'home_goals', 'AG': 'away_goals',
+        'HS': 'home_shots', 'AS': 'away_shots',
+        'HST': 'home_shots_on_target', 'AST': 'away_shots_on_target',
+        'B365H': 'odds_home', 'B365D': 'odds_draw', 'B365A': 'odds_away',
+    })
+    table = table.dropna(how='all')
+    # Unplayed rows have both scores absent; partial/malformed scores fail validation.
+    table = table[~table[['home_goals', 'away_goals']].isna().all(axis=1)].copy()
+    dates = pd.to_datetime(table.Date, dayfirst=True, format='mixed', errors='raise')
+    table['date'] = dates.dt.strftime('%Y-%m-%dT23:59:59Z')
+    for column in ['home', 'away']:
+        if table[column].isna().any():
+            raise ValueError('Missing team name')
+        table[column] = table[column].map(normalize_team)
+    table['competition'], table['source'] = competition, source
+    for column in OPTIONAL_HISTORY_COLUMNS:
+        if column not in table:
+            table[column] = pd.NA
+    has_bet365_odds = table[['odds_home', 'odds_draw', 'odds_away']].notna().all(axis=1)
+    table['odds_provider'] = table['odds_provider'].where(~has_bet365_odds, 'Bet365')
+    table['odds_semantics'] = table['odds_semantics'].where(
+        ~has_bet365_odds, 'football-data closing odds; research only')
+    table = table[HISTORY_COLUMNS]
+    validate_history(table)
+    return table
+
+
 def validate_history(df: pd.DataFrame) -> None:
-    _required(df, HISTORY_COLUMNS)
+    _required(df, CORE_HISTORY_COLUMNS)
     _scores(df)
+    for column in OPTIONAL_HISTORY_NUMERIC_COLUMNS:
+        if column not in df:
+            continue
+        supplied = df[column].notna()
+        numeric = pd.to_numeric(df[column], errors='coerce')
+        values = numeric[supplied]
+        if values.isna().any() or (values < 0).any() or not values.map(math.isfinite).all():
+            raise ValueError(f'{column} must contain nonnegative finite numbers when supplied')
     if df.duplicated(['date', 'home', 'away', 'competition']).any():
         raise ValueError('Duplicate historical match')
 
@@ -321,21 +372,7 @@ def fetch_history(raw_dir: Path) -> pd.DataFrame:
             content = _download(url, raw_dir, filename).decode('utf-8-sig')
             if year:
                 return _parse_openfootball(content, url, competition, year), None
-            table = pd.read_csv(StringIO(content))
-            table = table.rename(columns={'HomeTeam': 'home', 'AwayTeam': 'away', 'Home': 'home', 'Away': 'away',
-                                          'FTHG': 'home_goals', 'FTAG': 'away_goals', 'HG': 'home_goals', 'AG': 'away_goals'})
-            table = table.dropna(how='all')
-            # Unplayed rows have both scores absent; partial/malformed scores fail validation.
-            table = table[~table[['home_goals', 'away_goals']].isna().all(axis=1)].copy()
-            dates = pd.to_datetime(table.Date, dayfirst=True, format='mixed', errors='raise')
-            table['date'] = dates.dt.strftime('%Y-%m-%dT23:59:59Z')
-            for column in ['home', 'away']:
-                if table[column].isna().any():
-                    raise ValueError('Missing team name')
-                table[column] = table[column].map(normalize_team)
-            table['competition'], table['source'] = competition, url
-            table = table[HISTORY_COLUMNS]
-            validate_history(table)
+            table = _parse_football_data(content, competition, url)
             return table.to_dict('records'), None
         except (requests.RequestException, ValueError, KeyError) as exc:
             return [], {'source': url, 'error': str(exc)}

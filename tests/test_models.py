@@ -99,6 +99,58 @@ def test_outcomes_normalized(rates):
     assert all(np.isfinite(x) and 0 <= x <= 1 for x in p.values())
 
 
+def test_poisson_score_grid_is_normalized_and_agrees_with_outcome_probabilities():
+    mod = module()
+    model = mod.GoalModel().fit(history(), "2022-01-01")
+
+    grid = model.score_probabilities("A", "B", max_goals=12)
+    outcomes = model.predict_outcomes("A", "B")
+
+    assert grid.shape == (13, 13)
+    assert grid.sum() == pytest.approx(1.0)
+    assert np.tril(grid, -1).sum() == pytest.approx(outcomes["home"], abs=2e-4)
+    assert np.diag(grid)[:-1].sum() == pytest.approx(outcomes["draw"], abs=2e-4)
+    assert np.triu(grid, 1).sum() == pytest.approx(outcomes["away"], abs=2e-4)
+
+
+def test_score_sampling_is_seeded_and_returns_nonnegative_integer_scores():
+    mod = module()
+    model = mod.GoalModel().fit(history(), "2022-01-01")
+
+    first = model.sample_scores("A", "B", 100, np.random.default_rng(3))
+    second = model.sample_scores("A", "B", 100, np.random.default_rng(3))
+
+    assert np.array_equal(first, second)
+    assert first.shape == (100, 2)
+    assert np.issubdtype(first.dtype, np.integer)
+    assert (first >= 0).all()
+
+
+def test_metrics_uses_score_distribution_for_outcome_probabilities():
+    mod = module()
+
+    class DistributionModel:
+        coverage = {}
+        params = {"min_team_matches": 1}
+        fit_info = {"method": "test"}
+
+        def predict_goals(self, home, away):
+            return (0.1, 4.0)
+
+        def score_probabilities(self, home, away, max_goals=12):
+            grid = np.zeros((max_goals + 1, max_goals + 1))
+            grid[2, 0] = 1.0
+            return grid
+
+    heldout = pd.DataFrame([{
+        "date": "2021-01-01T00:00:00Z", "home": "A", "away": "B", "home_goals": 2, "away_goals": 0,
+    }])
+
+    metrics = mod._metrics(DistributionModel(), heldout, 5)
+
+    assert metrics["log_loss"] == pytest.approx(0.0)
+
+
 def test_temporal_evaluation_is_insulated_from_future():
     mod = module()
     data = history()
