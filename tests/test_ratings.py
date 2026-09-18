@@ -75,6 +75,12 @@ def test_cross_league_predictions_shrink_domestic_rating_without_european_eviden
     assert ucl.home_elo == pytest.approx(1500.0)
 
 
+def test_association_prior_orders_strong_and_weak_supported_leagues():
+    from champions.ratings import association_prior
+    assert association_prior("E0") > association_prior("G1")
+    assert association_prior("D1") > association_prior("NOR")
+
+
 def test_replay_is_input_order_independent_and_retains_population_prior_in_metadata():
     data = _matches()
     a = build_rating_features(data, "2026-10-01T00:00:00Z")

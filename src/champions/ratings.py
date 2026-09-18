@@ -12,6 +12,18 @@ EUROPEAN_COMPETITIONS = frozenset({
     "UCL", "UCL qualifying", "UEL", "UEL qualifying", "UECL", "UECL qualifying",
 })
 
+# Frozen five-year association-strength tiers for the free domestic feeds.
+# Values are centred Elo offsets, not live coefficients; later European results
+# update them and historical cutoffs never fetch a current web ranking.
+ASSOCIATION_PRIORS = {"E0": 55.0, "I1": 45.0, "SP1": 42.0, "D1": 38.0,
+                      "F1": 20.0, "N1": 14.0, "B1": 5.0, "P1": 0.0,
+                      "G1": -22.0, "T1": -22.0, "AUT": -30.0, "NOR": -35.0}
+
+
+def association_prior(league: str | None) -> float:
+    """Return the locally versioned association prior for a supported league."""
+    return float(ASSOCIATION_PRIORS.get(str(league), 0.0))
+
 
 @dataclass(frozen=True)
 class RatingConfig:
@@ -170,6 +182,8 @@ def build_rating_features(
                 international_evidence[row.home] += recency
                 international_evidence[row.away] += recency
             if not cross_league:
+                if domestic_assignments.get(row.home) is None:
+                    league_offsets.setdefault(str(row.competition), association_prior(str(row.competition)))
                 domestic_assignments[row.home] = str(row.competition)
                 domestic_assignments[row.away] = str(row.competition)
 
