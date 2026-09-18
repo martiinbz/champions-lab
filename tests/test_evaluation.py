@@ -23,6 +23,8 @@ def test_final_block_cannot_change_model_selection():
     assert report["selected_model"] == perturbed["selected_model"]
     assert report["selection_log_loss"] == perturbed["selection_log_loss"]
     assert report["assessment"]["log_loss"] != perturbed["assessment"]["log_loss"]
+    assert report["calibration"]["status"] in {"ok", "insufficient_data"}
+    assert report["calibration"]["promoted"] is False or report["calibration"]["payload"] is not None
     for fold in report["folds"]:
         assert fold["train_last_date"] < fold["holdout_start"]
         assert 0 <= fold["models"]["poisson"]["ece"] <= 1

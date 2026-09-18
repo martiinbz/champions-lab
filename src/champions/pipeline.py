@@ -48,17 +48,23 @@ def fit_production_model(history: pd.DataFrame, cutoff: str, decision: dict):
 
     selected = decision.get("selected_model", "poisson")
     if selected == "poisson":
-        return GoalModel().fit(history, cutoff)
-    if selected == "baseline":
-        return BaselineModel().fit(history, cutoff)
-    if selected == "dixon_coles":
-        return DixonColesModel().fit(history, cutoff)
-    if selected == "ensemble":
+        model = GoalModel().fit(history, cutoff)
+    elif selected == "baseline":
+        model = BaselineModel().fit(history, cutoff)
+    elif selected == "dixon_coles":
+        model = DixonColesModel().fit(history, cutoff)
+    elif selected == "ensemble":
         weights = decision.get("ensemble_weights")
         if weights is None:
             raise ValueError("La mezcla requiere pesos validados por evaluación temporal.")
-        return EnsembleModel([GoalModel().fit(history, cutoff), DixonColesModel().fit(history, cutoff)], weights)
-    raise ValueError(f"Modelo seleccionado desconocido: {selected}")
+        model = EnsembleModel([GoalModel().fit(history, cutoff), DixonColesModel().fit(history, cutoff)], weights)
+    else:
+        raise ValueError(f"Modelo seleccionado desconocido: {selected}")
+    calibration = decision.get("calibration", {})
+    if calibration.get("promoted"):
+        from champions.calibration import CalibratedModel, OutcomeCalibrator
+        model = CalibratedModel(model, OutcomeCalibrator.from_dict(calibration["payload"]))
+    return model
 
 
 def as_of(fixtures: pd.DataFrame, cutoff: str, matchday: int | None = None) -> pd.DataFrame:
@@ -198,6 +204,7 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
     model = fit_production_model(history, cutoff, {
         "selected_model": model_kind,
         "ensemble_weights": evaluation.get("ucl_rolling", {}).get("ensemble_weights"),
+        "calibration": evaluation.get("ucl_rolling", {}).get("calibration", {}),
     })
     probabilities, diagnostics = simulate(fixtures, model, simulations=simulations, seed=seed, knockout=knockout)
     warnings.extend(diagnostics.get("warnings", []))

@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from champions.pipeline import as_of, training_data, sha256, validate_simulation_count, write_json
+from champions.calibration import OutcomeCalibrator
 
 
 def test_fit_production_model_supports_dixon_coles_and_ensemble():
@@ -18,6 +19,15 @@ def test_fit_production_model_supports_dixon_coles_and_ensemble():
 
     assert type(dixon).__name__ == "DixonColesModel"
     assert type(ensemble).__name__ == "EnsembleModel"
+
+
+def test_fit_production_model_wraps_only_a_promoted_calibration():
+    from champions.pipeline import fit_production_model
+    history = pd.DataFrame([{"date": "2025-01-01", "home": "A", "away": "B", "home_goals": 1, "away_goals": 0}])
+    plain = fit_production_model(history, "2026-01-01", {"selected_model": "poisson", "calibration": {"promoted": False}})
+    wrapped = fit_production_model(history, "2026-01-01", {"selected_model": "poisson", "calibration": {"promoted": True, "payload": OutcomeCalibrator().to_dict()}})
+    assert type(plain).__name__ == "GoalModel"
+    assert type(wrapped).__name__ == "CalibratedModel"
 
 
 def fixture():
