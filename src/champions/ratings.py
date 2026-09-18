@@ -103,11 +103,10 @@ def build_rating_features(
     def rating_for(team: str, league: str | None) -> float:
         if team in ratings:
             return ratings[team]
-        if league is None:
-            return config.initial
-        evidence = league_evidence[league]
-        shrunk_offset = league_offsets[league] * evidence / (evidence + config.league_shrinkage)
-        return config.initial + shrunk_offset
+        # Club ratings are residuals around the population mean. League strength
+        # is injected separately in every expected-score calculation; adding it
+        # here as well would count the same cross-league evidence twice.
+        return config.initial
 
     for date, matches in frame.groupby("date", sort=True):
         snapshot_ratings = ratings.copy()
@@ -123,10 +122,7 @@ def build_rating_features(
         def snapshot_rating(team: str, league: str | None) -> float:
             if team in snapshot_ratings:
                 return snapshot_ratings[team]
-            if league is None:
-                return config.initial
-            evidence = snapshot_evidence[league]
-            return config.initial + snapshot_offsets[league] * evidence / (evidence + config.league_shrinkage)
+            return config.initial
 
         for row in matches.itertuples(index=False):
             cross_league = is_cross_league_competition(row.competition)

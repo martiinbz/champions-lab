@@ -52,6 +52,17 @@ def test_cross_league_results_update_regularized_offsets_and_recenter_them():
     assert result.attrs["team_leagues"] == {"A": "E0", "B": "E0", "C": "N1", "D": "N1"}
 
 
+def test_new_club_in_a_rated_league_receives_the_league_offset_once():
+    data = pd.concat([_matches().iloc[:3], pd.DataFrame([
+        {"date": "2026-08-20T12:00:00Z", "home": "E", "away": "B", "home_goals": 1,
+         "away_goals": 0, "competition": "E0", "source": "test"},
+    ])], ignore_index=True)
+    result = build_rating_features(data, "2026-10-01T00:00:00Z")
+    debut = result.loc[result.home.eq("E")].iloc[0]
+    assert debut.home_elo == pytest.approx(1500.0)
+    assert debut.home_league_strength > 0
+
+
 def test_replay_is_input_order_independent_and_retains_population_prior_in_metadata():
     data = _matches()
     a = build_rating_features(data, "2026-10-01T00:00:00Z")
