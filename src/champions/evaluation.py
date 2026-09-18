@@ -135,7 +135,7 @@ def evaluate_rolling(history: pd.DataFrame, cutoff: str, folds: int = 3) -> dict
             train_prob = np.concatenate([item[0] for item in records[:-1]])
             train_outcome = np.concatenate([item[1] for item in records[:-1]])
             valid_prob, valid_outcome, valid_base = records[-1]
-            fitted_calibrator = OutcomeCalibrator.fit(train_prob, train_outcome, min_samples=10)
+            fitted_calibrator = OutcomeCalibrator.fit(train_prob, train_outcome, min_samples=60)
             calibrated_prob = fitted_calibrator.transform_matrix(valid_prob)
             base_metrics = _outcome_metrics(valid_prob, valid_outcome)
             calibrated_metrics = _outcome_metrics(calibrated_prob, valid_outcome)
