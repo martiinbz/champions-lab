@@ -88,4 +88,7 @@ def model_from_dict(payload: dict):
         return DixonColesModel.from_dict(payload)
     if model_type == "EnsembleModel":
         return EnsembleModel.from_dict(payload)
+    if model_type == "CalibratedModel":
+        from champions.calibration import CalibratedModel
+        return CalibratedModel.from_dict(payload, model_from_dict)
     raise ValueError("unsupported serialized model type")
