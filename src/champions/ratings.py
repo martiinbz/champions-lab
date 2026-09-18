@@ -23,16 +23,21 @@ class RatingConfig:
     half_life_days: float = 365.0
     league_k_factor: float = 8.0
     league_shrinkage: float = 20.0
+    international_shrinkage: float = 8.0
+    minimum_international_weight: float = 0.45
 
     def validate(self) -> None:
         finite = (self.initial, self.k_factor, self.home_advantage, self.half_life_days,
-                  self.league_k_factor, self.league_shrinkage)
+                  self.league_k_factor, self.league_shrinkage, self.international_shrinkage,
+                  self.minimum_international_weight)
         if not np.isfinite(finite).all():
             raise ValueError("rating configuration values must be finite")
         if self.k_factor <= 0 or self.half_life_days <= 0:
             raise ValueError("k_factor and half_life_days must be positive")
-        if self.league_k_factor < 0 or self.league_shrinkage <= 0:
+        if self.league_k_factor < 0 or self.league_shrinkage <= 0 or self.international_shrinkage <= 0:
             raise ValueError("league parameters must be nonnegative with positive shrinkage")
+        if not 0 <= self.minimum_international_weight <= 1:
+            raise ValueError("minimum_international_weight must be within [0, 1]")
 
 
 def expected_score(home_rating: float, away_rating: float, home_advantage: float) -> float:
@@ -98,6 +103,7 @@ def build_rating_features(
     team_leagues: dict[str, str] = {}
     league_offsets: defaultdict[str, float] = defaultdict(float)
     league_evidence: defaultdict[str, float] = defaultdict(float)
+    international_evidence: defaultdict[str, float] = defaultdict(float)
     records: list[dict] = []
 
     def rating_for(team: str, league: str | None) -> float:
@@ -113,6 +119,7 @@ def build_rating_features(
         snapshot_leagues = team_leagues.copy()
         snapshot_offsets = league_offsets.copy()
         snapshot_evidence = league_evidence.copy()
+        snapshot_international = international_evidence.copy()
         updates: defaultdict[str, float] = defaultdict(float)
         league_updates: defaultdict[str, float] = defaultdict(float)
         domestic_assignments: dict[str, str] = {}
@@ -124,12 +131,18 @@ def build_rating_features(
                 return snapshot_ratings[team]
             return config.initial
 
+        def cross_league_rating(team: str, league: str | None) -> float:
+            raw = snapshot_rating(team, league)
+            evidence = snapshot_international[team]
+            weight = config.minimum_international_weight + (1.0 - config.minimum_international_weight) * evidence / (evidence + config.international_shrinkage)
+            return config.initial + (raw - config.initial) * weight
+
         for row in matches.itertuples(index=False):
             cross_league = is_cross_league_competition(row.competition)
             home_league = snapshot_leagues.get(row.home) if cross_league else str(row.competition)
             away_league = snapshot_leagues.get(row.away) if cross_league else str(row.competition)
-            home_rating = snapshot_rating(row.home, home_league)
-            away_rating = snapshot_rating(row.away, away_league)
+            home_rating = cross_league_rating(row.home, home_league) if cross_league else snapshot_rating(row.home, home_league)
+            away_rating = cross_league_rating(row.away, away_league) if cross_league else snapshot_rating(row.away, away_league)
             home_offset = snapshot_offsets.get(home_league, 0.0) if home_league else 0.0
             away_offset = snapshot_offsets.get(away_league, 0.0) if away_league else 0.0
             expected = expected_score(home_rating + home_offset, away_rating + away_offset, config.home_advantage)
@@ -154,6 +167,8 @@ def build_rating_features(
                 league_updates[away_league] -= league_delta
                 league_evidence[home_league] += recency
                 league_evidence[away_league] += recency
+                international_evidence[row.home] += recency
+                international_evidence[row.away] += recency
             if not cross_league:
                 domestic_assignments[row.home] = str(row.competition)
                 domestic_assignments[row.away] = str(row.competition)
@@ -173,8 +188,14 @@ def build_rating_features(
 
     result = pd.DataFrame(records)
     result.attrs["config"] = asdict(config)
-    result.attrs["final_ratings"] = dict(sorted((team, float(value)) for team, value in ratings.items()))
+    final_ratings = {}
+    for team, value in ratings.items():
+        evidence = international_evidence[team]
+        weight = config.minimum_international_weight + (1.0 - config.minimum_international_weight) * evidence / (evidence + config.international_shrinkage)
+        final_ratings[team] = float(config.initial + (value - config.initial) * weight)
+    result.attrs["final_ratings"] = dict(sorted(final_ratings.items()))
     result.attrs["league_offsets"] = dict(sorted((league, float(value)) for league, value in league_offsets.items()))
     result.attrs["league_evidence"] = dict(sorted((league, float(value)) for league, value in league_evidence.items()))
+    result.attrs["international_evidence"] = dict(sorted((team, float(value)) for team, value in international_evidence.items()))
     result.attrs["team_leagues"] = dict(sorted(team_leagues.items()))
     return result

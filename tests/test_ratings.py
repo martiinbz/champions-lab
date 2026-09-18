@@ -63,6 +63,18 @@ def test_new_club_in_a_rated_league_receives_the_league_offset_once():
     assert debut.home_league_strength > 0
 
 
+def test_cross_league_predictions_shrink_domestic_rating_without_european_evidence():
+    data = pd.DataFrame([
+        {"date": "2026-08-01", "home": "A", "away": "B", "home_goals": 5, "away_goals": 0, "competition": "E0"},
+        {"date": "2026-08-02", "home": "A", "away": "B", "home_goals": 4, "away_goals": 0, "competition": "E0"},
+        {"date": "2026-08-10", "home": "A", "away": "C", "home_goals": 1, "away_goals": 0, "competition": "UCL"},
+    ])
+    config = RatingConfig(international_shrinkage=100.0, minimum_international_weight=0.0)
+    result = build_rating_features(data, "2026-09-01", config)
+    ucl = result.loc[result.competition.eq("UCL")].iloc[0]
+    assert ucl.home_elo == pytest.approx(1500.0)
+
+
 def test_replay_is_input_order_independent_and_retains_population_prior_in_metadata():
     data = _matches()
     a = build_rating_features(data, "2026-10-01T00:00:00Z")
