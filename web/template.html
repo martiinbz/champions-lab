@@ -289,12 +289,11 @@ const DATA = /*__CHAMPIONS_DATA__*/null;
     ["Simulaciones", (run.simulations ?? 0).toLocaleString("es-ES")],
   ];
   if (a) cards.push(["Log-loss en el último bloque", `${fmt(a.log_loss)} <small style="text-transform:none">(baseline ${fmt(ab?.log_loss)})</small>`], ["Brier en el último bloque", `${fmt(a.brier)} <small style="text-transform:none">(baseline ${fmt(ab?.brier)})</small>`]);
-  const params = model.selected_params && Object.keys(model.selected_params).length ? Object.entries(model.selected_params).map(([k, v]) => `${esc(k)} = ${esc(v)}`).join(" · ") : "valores por defecto";
   const notes = [...(run.warnings || []), ...(DATA.issues || [])];
   $("#p-model").innerHTML = `<h2>Modelo y datos</h2>
-    <p class="hint">Un modelo de Poisson de ataque y defensa con ventaja local, recencia y fuerza por liga. Se elige entre candidatos validando sobre partidos de Champions pasados.</p>
+    <p class="hint">Se elige entre Poisson, Dixon-Coles, un ensemble de ambos y un baseline validando sobre partidos de Champions pasados; el último bloque queda reservado para evaluar.</p>
     <div class="cards">${cards.map(([l, v]) => `<div class="card"><small>${l}</small><div class="v">${v}</div></div>`).join("")}</div>
-    <p class="hint" style="margin-top:14px">Parámetros elegidos: ${params}. Menor log-loss y Brier es mejor.</p>
+    <p class="hint" style="margin-top:14px">${model.calibrated ? "Probabilidades 1X2 calibradas con ventanas temporales. " : ""}Menor log-loss y Brier es mejor.</p>
     ${model.ranking ? `<p class="hint">Mejores candidatos (log-loss de selección): ${model.ranking.map(([n, v]) => `<code>${esc(n)}</code> ${(+v).toFixed(4)}`).join(" · ")}</p>` : ""}
     ${notes.length ? `<h2 style="font-size:15px;margin-top:18px">Avisos</h2><ul class="notes">${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
     <p class="hint">Generado el ${esc(fmtDate(DATA.generated_at, { dateStyle: "long", timeStyle: "short" }))} · ejecución <code>${esc(run.run_id)}</code>.</p>`;

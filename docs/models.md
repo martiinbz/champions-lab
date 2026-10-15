@@ -208,8 +208,7 @@ normalized outcome tails, decay weights, invalid scores, sparse/empty priors,
 persistent warnings, optimizer fallback and temporal metrics.
 
 
-## Fuerza por liga, expected goals y ajuste automático
+## Fuerza por liga y expected goals opcionales
 
-- Con la columna `competition`, `GoalModel` descompone ataque y defensa de cada equipo en un efecto de liga (regularización `league_regularization`, ligera) más una desviación del equipo (`regularization`). Los efectos de liga se identifican con los partidos europeos entre ligas; los equipos sin liga doméstica en los datos comparten el grupo `OTHER`. `attack`/`defence` guardados son la suma, por lo que la predicción y la serialización no cambian.
-- `xg_blend` mezcla los goles reales con un proxy de goles esperados a partir de tiros (0,31 por tiro a puerta y 0,03 por el resto) solo en partidos con ambos datos de tiros. Las métricas de evaluación siguen usando goles reales.
-- `evaluate_rolling` puntúa una rejilla (semivida 180/365/730 días × regularización 2,5/5/10 × `xg_blend` 0/0,4 si hay tiros) además de `baseline` y `poisson_flat` (sin ligas) en los bloques de selección de partidos pasados de Champions. El mejor por log-loss se usa en `simulate` (`selected_params`); el último bloque solo evalúa. Elegir entre muchos candidatos con pocos partidos puede sobreajustar levemente la selección: el bloque reservado es la comprobación.
+- Con la columna `competition`, `GoalModel` (`use_leagues=True` por defecto) descompone ataque y defensa de cada equipo en un efecto de liga (regularización `league_regularization`, ligera) más una desviación del equipo (`regularization`). Los efectos de liga se identifican con los partidos europeos entre ligas; los equipos sin liga doméstica en los datos comparten el grupo `OTHER`. `attack`/`defence` guardados son la suma, por lo que la predicción y la serialización no cambian. Con datos reales (UCL, tres bloques temporales) baja el log-loss de Poisson de 0,940 a 0,922; `GoalModel(use_leagues=False)` recupera el comportamiento anterior.
+- `xg_blend` (0 por defecto) mezcla los goles reales con un proxy de goles esperados a partir de tiros (0,31 por tiro a puerta y 0,03 por el resto) solo en partidos con ambos datos de tiros. Las métricas de evaluación siguen usando goles reales. En las pruebas con datos reales no mejoró la selección, por eso no está activo.

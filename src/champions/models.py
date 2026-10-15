@@ -12,10 +12,10 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.special import gammaln
-from scipy.stats import skellam
+from scipy.stats import poisson, skellam
 
 __all__ = ["GoalModel", "BaselineModel", "CoverageWarning", "DataWarning",
-           "outcome_probabilities", "evaluate"]
+           "independent_poisson_grid", "outcome_probabilities", "evaluate"]
 
 
 class CoverageWarning(UserWarning):
@@ -28,7 +28,7 @@ class DataWarning(UserWarning):
 
 # Carried through when present: competition labels feed league-strength effects and the
 # shot columns feed the optional expected-goals proxy.
-OPTIONAL_COLUMNS = ("competition", "home_shots", "away_shots", "home_sot", "away_sot")
+OPTIONAL_COLUMNS = ("competition", "home_shots", "away_shots", "home_shots_on_target", "away_shots_on_target")
 EUROPEAN_COMPETITIONS = frozenset({"UCL", "UEL", "UECL"})
 
 
@@ -58,10 +58,10 @@ def goal_targets(frame: pd.DataFrame, blend: float) -> tuple[np.ndarray, np.ndar
     """
     yh = frame.home_goals.to_numpy(dtype=float)
     ya = frame.away_goals.to_numpy(dtype=float)
-    if blend <= 0 or not {"home_shots", "away_shots", "home_sot", "away_sot"}.issubset(frame.columns):
+    if blend <= 0 or not {"home_shots", "away_shots", "home_shots_on_target", "away_shots_on_target"}.issubset(frame.columns):
         return yh, ya
     cols = [pd.to_numeric(frame[c], errors="coerce").to_numpy(dtype=float)
-            for c in ("home_shots", "home_sot", "away_shots", "away_sot")]
+            for c in ("home_shots", "home_shots_on_target", "away_shots", "away_shots_on_target")]
     hs, hot, as_, aot = cols
     ok = np.isfinite(hs + hot + as_ + aot) & (hs >= hot) & (as_ >= aot) & (hot >= 0) & (aot >= 0)
     xg_h = np.where(ok, .31 * hot + .03 * np.where(ok, hs - hot, 0), yh)
@@ -119,6 +119,26 @@ def outcome_probabilities(home_goals: float, away_goals: float) -> dict[str, flo
     p = np.maximum(p, 0)
     p /= p.sum()
     return dict(zip(("home", "draw", "away"), map(float, p)))
+
+
+def independent_poisson_grid(home_goals: float, away_goals: float, max_goals: int = 12) -> np.ndarray:
+    """Return a normalized score grid with every tail folded into its last cell."""
+    rates = np.asarray([home_goals, away_goals], dtype=float)
+    if not np.all(np.isfinite(rates)) or np.any(rates <= 0):
+        raise ValueError("goal rates must be finite and positive")
+    if not isinstance(max_goals, int) or max_goals < 1:
+        raise ValueError("max_goals must be a positive integer")
+
+    exact_goals = np.arange(max_goals)
+
+    def bounded_pmf(rate: float) -> np.ndarray:
+        probabilities = poisson.pmf(exact_goals, rate)
+        return np.append(probabilities, max(0.0, 1.0 - probabilities.sum()))
+
+    grid = np.outer(bounded_pmf(rates[0]), bounded_pmf(rates[1]))
+    if not np.isfinite(grid).all() or grid.sum() <= 0:
+        raise ValueError("goal rates exceed numerical probability support")
+    return grid / grid.sum()
 
 
 class BaselineModel:
@@ -201,6 +221,22 @@ class BaselineModel:
 
     def predict_outcomes(self, home: str, away: str, neutral: bool = False) -> dict[str, float]:
         return outcome_probabilities(*self.predict_goals(home, away, neutral))
+
+    def score_probabilities(self, home: str, away: str, neutral: bool = False,
+                            max_goals: int = 12) -> np.ndarray:
+        """Coherent Poisson score probabilities for model comparison and simulation."""
+        return independent_poisson_grid(*self.predict_goals(home, away, neutral), max_goals=max_goals)
+
+    def sample_scores(self, home: str, away: str, size: int, rng: np.random.Generator,
+                      neutral: bool = False) -> np.ndarray:
+        """Draw seeded integer score pairs from ``score_probabilities``."""
+        if isinstance(size, bool) or not isinstance(size, (int, np.integer)) or size < 1:
+            raise ValueError("size must be a positive integer")
+        if not isinstance(rng, np.random.Generator):
+            raise ValueError("rng must be a numpy Generator")
+        grid = self.score_probabilities(home, away, neutral=neutral)
+        indices = rng.choice(grid.size, size=int(size), p=grid.ravel())
+        return np.column_stack(np.unravel_index(indices, grid.shape)).astype(np.int64, copy=False)
 
     def to_dict(self) -> dict:
         if not self._fitted:
@@ -355,7 +391,16 @@ def _metrics(model, holdout, bins):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", CoverageWarning)
         rates = np.array([model.predict_goals(row.home, row.away) for row in holdout.itertuples()])
-    probabilities = np.array([list(outcome_probabilities(*r).values()) for r in rates])
+        grids = [np.asarray(model.score_probabilities(row.home, row.away, max_goals=12), dtype=float)
+                 if hasattr(model, "score_probabilities") else independent_poisson_grid(*model.predict_goals(row.home, row.away))
+                 for row in holdout.itertuples()]
+    for grid in grids:
+        if grid.shape != (13, 13) or not np.isfinite(grid).all() or (grid < 0).any() or not np.isclose(grid.sum(), 1.0):
+            raise ValueError("model returned an invalid score probability grid")
+    probabilities = np.array([
+        [np.tril(grid, -1).sum(), np.diag(grid).sum(), np.triu(grid, 1).sum()]
+        for grid in grids
+    ])
     goals = holdout[["home_goals", "away_goals"]].to_numpy(dtype=float)
     labels = np.where(goals[:, 0] > goals[:, 1], 0, np.where(goals[:, 0] == goals[:, 1], 1, 2))
     targets = np.eye(3)[labels]
@@ -376,9 +421,14 @@ def _metrics(model, holdout, bins):
     if unknown or sparse:
         warnings.warn(f"Holdout has missing coverage {unknown} and sparse coverage {sparse}.",
                       CoverageWarning, stacklevel=3)
+    observed_score_probability = np.array([
+        grid[min(int(home), 12), min(int(away), 12)]
+        for grid, (home, away) in zip(grids, goals)
+    ])
     return {"log_loss": float(-np.log(np.maximum(probabilities[np.arange(len(labels)), labels], 1e-15)).mean()),
             "brier": float(np.square(probabilities - targets).sum(axis=1).mean()),
             "goal_log_loss": float((rates - goals * np.log(rates) + gammaln(goals + 1)).sum(axis=1).mean()),
+            "score_log_loss": float(-np.log(np.maximum(observed_score_probability, 1e-15)).mean()),
             "calibration_bins": calibration, "missing_teams": unknown, "sparse_teams": sparse,
             "fit_info": copy.deepcopy(model.fit_info)}
 

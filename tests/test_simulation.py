@@ -54,6 +54,13 @@ class Model:
         return self.rate, self.rate
 
 
+class DrawDistributionModel(Model):
+    def score_probabilities(self, home, away, neutral=False, max_goals=12):
+        grid = np.zeros((max_goals + 1, max_goals + 1))
+        grid[0, 0] = 1.0
+        return grid
+
+
 def test_conservation_reproducibility_and_rate_cache():
     m = engine(); f = schedule(); model = Model()
     with warnings.catch_warnings():
@@ -70,6 +77,14 @@ def test_conservation_reproducibility_and_rate_cache():
     assert np.allclose(p.playoff,p.positions9_16+p.positions17_24)
     assert (p.champion <= p.final).all()
     assert p.expected_rank.sum() == pytest.approx(666)
+
+
+def test_league_phase_samples_model_score_distribution_when_available():
+    m = engine()
+    probabilities, diagnostics = m.simulate(schedule(), DrawDistributionModel(), 64, 11)
+
+    assert np.allclose(probabilities.expected_points, 8.0)
+    assert diagnostics["league_score_sampling"] == "model_score_distribution"
 
 
 def test_observed_results_preserved_and_missing_tiebreakers_disclosed():

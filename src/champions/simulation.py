@@ -151,6 +151,7 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
     home = f.home.map(index).to_numpy()
     away = f.away.map(index).to_numpy()
     rates = np.zeros((2, 36, 36, 2))
+    score_grids = np.empty((2, 36, 36), dtype=object) if hasattr(model, "score_probabilities") else None
     for neutral in (False, True):
         for h, h_name in enumerate(teams):
             for a, a_name in enumerate(teams):
@@ -160,6 +161,11 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
                 if value.shape != (2,) or not np.isfinite(value).all() or (value < 0).any():
                     raise ValueError(f"Invalid predicted goal rates for {h_name} vs {a_name}")
                 rates[int(neutral), h, a] = value
+                if score_grids is not None:
+                    grid = np.asarray(model.score_probabilities(h_name, a_name, neutral=neutral), dtype=float)
+                    if grid.ndim != 2 or not np.isfinite(grid).all() or (grid < 0).any() or not np.isclose(grid.sum(), 1.0):
+                        raise ValueError(f"Invalid score distribution for {h_name} vs {a_name}")
+                    score_grids[int(neutral), h, a] = grid / grid.sum()
     incidence_h = np.eye(36, dtype=np.int64)[home]
     incidence_a = np.eye(36, dtype=np.int64)[away]
     opponents = incidence_h.T @ incidence_a + incidence_a.T @ incidence_h
@@ -173,8 +179,16 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
         size = min(1024, simulations - start)
         hg = np.broadcast_to(f.home_goals.fillna(0).to_numpy(dtype=np.int64), (size, 144)).copy()
         ag = np.broadcast_to(f.away_goals.fillna(0).to_numpy(dtype=np.int64), (size, 144)).copy()
-        hg[:, unknown] = rng.poisson(rates[0, home[unknown], away[unknown], 0], size=(size, int(unknown.sum())))
-        ag[:, unknown] = rng.poisson(rates[0, home[unknown], away[unknown], 1], size=(size, int(unknown.sum())))
+        if score_grids is None:
+            hg[:, unknown] = rng.poisson(rates[0, home[unknown], away[unknown], 0], size=(size, int(unknown.sum())))
+            ag[:, unknown] = rng.poisson(rates[0, home[unknown], away[unknown], 1], size=(size, int(unknown.sum())))
+        else:
+            for fixture_index in np.flatnonzero(unknown):
+                grid = score_grids[0, home[fixture_index], away[fixture_index]]
+                draws = rng.choice(grid.size, size=size, p=grid.ravel())
+                home_scores, away_scores = np.unravel_index(draws, grid.shape)
+                hg[:, fixture_index] = home_scores
+                ag[:, fixture_index] = away_scores
         metrics = _league_metrics(hg, ag, incidence_h, incidence_a, opponents)
         order, groups, tied_sims = _rank(metrics, rng)
         if knockout is not None:
@@ -217,6 +231,7 @@ def simulate(fixtures: pd.DataFrame, model, simulations: int = 10000, seed: int 
         "unresolved_tie_groups": unresolved_groups, "simulations_with_unresolved_ties": unresolved_sims,
         "unresolved_tie_simulation_fraction": unresolved_sims/simulations,
         "missing_tiebreakers": ["disciplinary_points", "club_coefficient"],
+        "league_score_sampling": "model_score_distribution" if score_grids is not None else "independent_poisson_rates",
         "tie_fallback": "seeded_uniform_random_within_unresolved_group",
         "knockout_fixture_support": True, "knockout_conditioned": knockout is not None, "warnings": messages,
         "assumptions": ["independent_poisson_goals", "extra_time_rates_divided_by_3",

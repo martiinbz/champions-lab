@@ -106,14 +106,15 @@ def _matches(root: Path, meta: dict, run: Path) -> list[dict]:
 def _model_summary(meta: dict) -> dict:
     evaluation = meta.get("evaluation") or {}
     rolling = evaluation.get("ucl_rolling") or {}
+    calibration = rolling.get("calibration") or {}
     summary = {"selected_model": meta.get("model"), "requested_model": meta.get("requested_model"),
-               "selected_candidate": rolling.get("selected_candidate"),
-               "selected_params": evaluation.get("selected_params"),
-               "basis": evaluation.get("selection_basis"), "status": rolling.get("status")}
+               "selected_candidate": rolling.get("selected_model") or meta.get("model"),
+               "basis": evaluation.get("selection_basis"), "status": rolling.get("status"),
+               "calibrated": bool(calibration.get("promoted"))}
     if rolling.get("status") == "ok":
         scores = rolling.get("selection_log_loss", {})
         summary["baseline_log_loss"] = scores.get("baseline")
-        summary["selected_log_loss"] = scores.get(rolling.get("selected_candidate"))
+        summary["selected_log_loss"] = scores.get(rolling.get("selected_model"))
         assessment = rolling.get("assessment") or {}
         summary["assessment"] = {k: assessment.get(k) for k in ("log_loss", "brier", "ece")}
         baseline_fold = (rolling.get("folds") or [{}])[-1].get("models", {}).get("baseline", {})

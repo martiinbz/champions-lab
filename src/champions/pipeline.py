@@ -40,6 +40,33 @@ def validate_simulation_count(value: int) -> int:
     return int(value)
 
 
+def fit_production_model(history: pd.DataFrame, cutoff: str, decision: dict):
+    """Fit exactly the definition chosen by leakage-safe chronological evaluation."""
+    from champions.dixon_coles import DixonColesModel
+    from champions.ensemble import EnsembleModel
+    from champions.models import BaselineModel, GoalModel
+
+    selected = decision.get("selected_model", "poisson")
+    if selected == "poisson":
+        model = GoalModel().fit(history, cutoff)
+    elif selected == "baseline":
+        model = BaselineModel().fit(history, cutoff)
+    elif selected == "dixon_coles":
+        model = DixonColesModel().fit(history, cutoff)
+    elif selected == "ensemble":
+        weights = decision.get("ensemble_weights")
+        if weights is None:
+            raise ValueError("La mezcla requiere pesos validados por evaluación temporal.")
+        model = EnsembleModel([GoalModel().fit(history, cutoff), DixonColesModel().fit(history, cutoff)], weights)
+    else:
+        raise ValueError(f"Modelo seleccionado desconocido: {selected}")
+    calibration = decision.get("calibration", {})
+    if calibration.get("promoted"):
+        from champions.calibration import CalibratedModel, OutcomeCalibrator
+        model = CalibratedModel(model, OutcomeCalibrator.from_dict(calibration["payload"]))
+    return model
+
+
 def as_of(fixtures: pd.DataFrame, cutoff: str, matchday: int | None = None) -> pd.DataFrame:
     """Mask results not yet knowable, including partially played matchdays.
 
@@ -115,7 +142,6 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
         seed: int = 42, evaluate_model: bool = True, model_kind: str = "auto",
         knockout_path: Path | None = None) -> Path:
     from champions.data import validate_fixtures
-    from champions.models import GoalModel
     from champions.evaluation import evaluate_models
     from champions.simulation import simulate
     simulations = validate_simulation_count(simulations)
@@ -175,8 +201,11 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
         if not evaluate_model:
             raise ValueError("El modelo auto requiere evaluación; elige --model poisson o baseline al omitirla.")
         model_kind = evaluation.get("selected_model", "baseline")
-    tuned = evaluation.get("selected_params", {}) if requested_model == "auto" and model_kind == "poisson" else {}
-    model = GoalModel(kind=model_kind, **tuned).fit(history, cutoff)
+    model = fit_production_model(history, cutoff, {
+        "selected_model": model_kind,
+        "ensemble_weights": evaluation.get("ucl_rolling", {}).get("ensemble_weights"),
+        "calibration": evaluation.get("ucl_rolling", {}).get("calibration", {}),
+    })
     probabilities, diagnostics = simulate(fixtures, model, simulations=simulations, seed=seed, knockout=knockout)
     warnings.extend(diagnostics.get("warnings", []))
     warnings.extend(getattr(model, "warnings", []))
@@ -228,7 +257,7 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
 
 
 def reproduce(root: Path, run_id: str) -> dict:
-    from champions.models import GoalModel
+    from champions.ensemble import model_from_dict
     from champions.simulation import simulate
     if Path(run_id).name != run_id or run_id.startswith("."):
         raise ValueError("Identificador de ejecución inválido.")
@@ -247,7 +276,7 @@ def reproduce(root: Path, run_id: str) -> dict:
             raise ValueError('Nombre de archivo del resultado inválido.')
         if sha256(result / name) != expected:
             raise ValueError(f"Resultado alterado: {name}")
-    model = GoalModel.from_dict(json.loads((result / "model.json").read_text(encoding="utf-8")))
+    model = model_from_dict(json.loads((result / "model.json").read_text(encoding="utf-8")))
     knockout = json.loads((data / "knockout.json").read_text(encoding="utf-8")) if (data / "knockout.json").exists() else None
     fresh, _ = simulate(pd.read_csv(data / "fixtures.csv"), model, simulations=meta["simulations"], seed=meta["seed"], knockout=knockout)
     old = pd.read_csv(result / "probabilities.csv")
