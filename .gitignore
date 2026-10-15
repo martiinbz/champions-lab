@@ -10,3 +10,4 @@ data/processed/
 data/snapshots/
 results/snapshots/
 *.log
+web/index.html

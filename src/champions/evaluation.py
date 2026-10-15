@@ -8,6 +8,35 @@ import pandas as pd
 from champions.models import GoalModel, BaselineModel, CoverageWarning, _completed, _cutoff, _metrics, evaluate
 
 
+CORE_CANDIDATES = ("poisson", "baseline")
+
+
+def _ece(metrics, n):
+    return float(np.mean([
+        sum(b["count"] * abs(b["mean_probability"] - b["observed_frequency"])
+            for b in bins if b["count"]) / n
+        for bins in metrics["calibration_bins"].values()]))
+
+
+def candidate_models(history: pd.DataFrame) -> dict:
+    """Named candidates: the baseline, the flat and league-aware Poisson, and a tuning grid.
+
+    The grid varies recency half-life, team shrinkage and (when shot data exist) the share of
+    shot-based expected goals in the training target. Everything is chosen on past UCL folds.
+    """
+    has_shots = "home_shots" in history and history["home_shots"].notna().any()
+    candidates = {"poisson": ({}, GoalModel()), "baseline": ({}, BaselineModel()),
+                  "poisson_flat": ({"use_leagues": False}, GoalModel(use_leagues=False))}
+    for half_life in (180, 365, 730):
+        for regularization in (2.5, 5.0, 10.0):
+            for blend in ((0.0, 0.4) if has_shots else (0.0,)):
+                params = {"half_life_days": float(half_life), "regularization": regularization,
+                          "xg_blend": blend}
+                name = f"poisson[hl={half_life},reg={regularization:g},xg={blend:g}]"
+                candidates[name] = (params, GoalModel(**params))
+    return candidates
+
+
 def evaluate_rolling(history: pd.DataFrame, cutoff: str, folds: int = 3) -> dict:
     """Use only UCL holdouts; all competitions may supply pre-block training.
 
@@ -29,6 +58,8 @@ def evaluate_rolling(history: pd.DataFrame, cutoff: str, folds: int = 3) -> dict
     if len(ucl) < 80 or len(dates) < 4 * folds:
         report["reason"] = "too_few_UCL_matches_or_dates"
         return report
+    candidates = candidate_models(frame)
+    full = {}
     boundaries = [dates[int(len(dates) * (i + 1) / (folds + 1))] for i in range(folds)] + [cut]
     for i, (start, end) in enumerate(zip(boundaries[:-1], boundaries[1:])):
         train = _completed(frame, start)
@@ -42,23 +73,24 @@ def evaluate_rolling(history: pd.DataFrame, cutoff: str, folds: int = 3) -> dict
                 "n_train": len(train), "n_holdout": len(heldout), "models": {}}
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", CoverageWarning)
-            for name, candidate in (("poisson", GoalModel()), ("baseline", BaselineModel())):
+            for name, (_, candidate) in candidates.items():
                 candidate.fit(train, start.isoformat())
                 metrics = _metrics(candidate, heldout, 10)
-                metrics["ece"] = float(np.mean([
-                    sum(b["count"] * abs(b["mean_probability"] - b["observed_frequency"])
-                        for b in bins if b["count"]) / len(heldout)
-                    for bins in metrics["calibration_bins"].values()
-                ]))
-                fold["models"][name] = metrics
+                metrics["ece"] = _ece(metrics, len(heldout))
+                full.setdefault(i, {})[name] = metrics
+                fold["models"][name] = metrics if name in CORE_CANDIDATES else {
+                    k: metrics[k] for k in ("log_loss", "brier", "goal_log_loss")}
         report["folds"].append(fold)
     selection = report["folds"][:-1]
     n = sum(f["n_holdout"] for f in selection)
     selection_scores = {name: sum(f["n_holdout"] * f["models"][name]["log_loss"] for f in selection) / n
-                        for name in ("poisson", "baseline")}
+                        for name in candidates}
     selected = min(selection_scores, key=selection_scores.get)
-    report.update(status="ok", selected_model=selected, selection_log_loss=selection_scores,
-                  assessment=report["folds"][-1]["models"][selected],
+    selected_params = candidates[selected][0]
+    kind = "baseline" if selected == "baseline" else "poisson"
+    report.update(status="ok", selected_model=kind, selected_candidate=selected,
+                  selected_params=selected_params, selection_log_loss=selection_scores,
+                  assessment=full[folds - 1][selected],
                   limitation="Finite UCL holdouts do not establish future reliability. ECE is descriptive, not a fitted calibrator.")
     return report
 
@@ -72,6 +104,7 @@ def evaluate_models(history: pd.DataFrame, cutoff: str) -> dict:
     report["ucl_rolling"] = rolling
     if rolling["status"] == "ok":
         report["selected_model"] = report["recommended_model"] = rolling["selected_model"]
+        report["selected_params"] = rolling["selected_params"]
         report["selection_basis"] = "UCL rolling selection folds; final fold reserved for assessment"
     else:
         report["selection_basis"] = "general holdout; UCL evidence insufficient"

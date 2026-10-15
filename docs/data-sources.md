@@ -12,8 +12,8 @@ La fuente lista la fase liga. Para actualizar durante eliminatorias se incorpora
 
 ## Histórico de entrenamiento
 
-- [Football-Data.co.uk](https://www.football-data.co.uk/data.php): resultados de Inglaterra, Alemania, Italia, España, Francia, Países Bajos, Bélgica, Portugal, Turquía y Grecia, temporadas 2024/25–2026/27; Austria y Noruega desde sus archivos ampliados.
-- [OpenFootball Champions League](https://github.com/openfootball/champions-league): Champions 2024/25 y 2025/26, previas de Champions/Europa/Conference de ambas temporadas y fases principales Europa/Conference 2024/25 disponibles en el repositorio.
+- [Football-Data.co.uk](https://www.football-data.co.uk/data.php): resultados de Inglaterra, Alemania, Italia, España, Francia, Países Bajos, Bélgica, Portugal, Turquía y Grecia, temporadas 2021/22–2026/27, más Escocia; Austria, Noruega, Dinamarca, Suiza, Polonia y Suecia desde sus archivos ampliados. Se guardan tiros y tiros a puerta (`home_shots`, `away_shots`, `home_sot`, `away_sot`) cuando existen.
+- [OpenFootball Champions League](https://github.com/openfootball/champions-league): Champions desde 2020/21, Europa League desde 2020/21, Conference League desde 2021/22 y las previas de 2024/25 y 2025/26 disponibles en el repositorio. Una fuente que falle no detiene la descarga: se registra en `history-quality.json`.
 
 Los cruces europeos conectan los equipos de las ligas nacionales. El validador exige historial para todos los participantes y que estén conectados por rivales comunes; no asigna escalas nacionales independientes. Esto no elimina la incertidumbre cuando existen pocos cruces entre ligas.
 

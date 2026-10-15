@@ -22,6 +22,23 @@ UEFA_URL = 'https://www.uefa.com/uefachampionsleague/news/02a8-2174c9e9019d-f909
 CURRENT_TEAMS = frozenset('AEK Athens|Arsenal|Aston Villa|Atlético de Madrid|Barcelona|Bayern München|Bodø/Glimt|Borussia Dortmund|Club Brugge|Como|Fenerbahçe|Feyenoord|Galatasaray|Inter|LASK|Leipzig|Lens|Lille|Liverpool|Manchester City|Manchester United|Napoli|Paris Saint-Germain|Porto|PSV Eindhoven|Real Betis|Real Madrid|Roma|Sabah|Shakhtar Donetsk|Slavia Praha|Slovan Bratislava|Sporting CP|Stuttgart|Viking|Villarreal'.split('|'))
 FIXTURE_COLUMNS = ['match_id', 'date', 'season', 'stage', 'matchday', 'home', 'away', 'home_goals', 'away_goals', 'status', 'source']
 HISTORY_COLUMNS = ['date', 'home', 'away', 'home_goals', 'away_goals', 'competition', 'source']
+# Optional match statistics (football-data.co.uk only); missing for European and older rows.
+STAT_COLUMNS = ['home_shots', 'away_shots', 'home_sot', 'away_sot']
+STAT_SOURCES = {'HS': 'home_shots', 'AS': 'away_shots', 'HST': 'home_sot', 'AST': 'away_sot'}
+FD_SEASONS = ['2122', '2223', '2324', '2425', '2526', '2627']
+FD_LEAGUES = ['E0', 'D1', 'I1', 'SP1', 'F1', 'N1', 'B1', 'P1', 'T1', 'G1', 'SC0']
+FD_EXTENDED = ['AUT', 'NOR', 'DNK', 'SWZ', 'POL', 'SWE']
+# openfootball/champions-league files that exist upstream, by edition start year.
+OPENFOOTBALL_FILES = {
+    2020: [('cl', 'UCL'), ('el', 'UEL')],
+    2021: [('cl', 'UCL'), ('el', 'UEL'), ('conf', 'UECL')],
+    2022: [('cl', 'UCL'), ('el', 'UEL'), ('conf', 'UECL')],
+    2023: [('cl', 'UCL'), ('el', 'UEL'), ('conf', 'UECL')],
+    2024: [('cl', 'UCL'), ('clq', 'UCL qualifying'), ('el', 'UEL'), ('conf', 'UECL'),
+           ('elq', 'UEL qualifying'), ('confq', 'UECL qualifying')],
+    2025: [('cl', 'UCL'), ('clq', 'UCL qualifying'), ('elq', 'UEL qualifying'), ('confq', 'UECL qualifying')],
+}
+HISTORY_START = '2021-07-01T00:00:00Z'
 ALIASES = {
     'Man City': 'Manchester City', 'Manchester City FC': 'Manchester City',
     'Man United': 'Manchester United', 'Manchester United FC': 'Manchester United',
@@ -303,22 +320,24 @@ def fetch_history(raw_dir: Path) -> pd.DataFrame:
     raw_dir = Path(raw_dir)
     _system_tls()
     sources = []
-    for season in ['2425', '2526', '2627']:
-        for league in ['E0', 'D1', 'I1', 'SP1', 'F1', 'N1', 'B1', 'P1', 'T1', 'G1']:
+    for season in FD_SEASONS:
+        for league in FD_LEAGUES:
             sources.append((f'https://www.football-data.co.uk/mmz4281/{season}/{league}.csv', f'fd-{season}-{league}.csv', league, None))
-    for country in ['AUT', 'NOR']:
+    for country in FD_EXTENDED:
         sources.append((f'https://www.football-data.co.uk/new/{country}.csv', f'fd-{country}.csv', country, None))
-    for year in [2024, 2025]:
-        for filename, competition in [('cl', 'UCL'), ('clq', 'UCL qualifying'), ('el', 'UEL'), ('conf', 'UECL'), ('elq', 'UEL qualifying'), ('confq', 'UECL qualifying')]:
-            if year == 2025 and filename in ('el', 'conf'):
-                continue  # Upstream has no main-phase files for these editions.
-            season = f'{year}-{str(year+1)[-2:]}'
+    for year, files in OPENFOOTBALL_FILES.items():
+        season = f'{year}-{str(year+1)[-2:]}'
+        for filename, competition in files:
             sources.append((f'https://raw.githubusercontent.com/openfootball/champions-league/master/{season}/{filename}.txt', f'openfootball-{season}-{filename}.txt', competition, year))
 
     def ingest(spec):
         url, filename, competition, year = spec
         try:
-            content = _download(url, raw_dir, filename).decode('utf-8-sig')
+            payload = _download(url, raw_dir, filename)
+            try:
+                content = payload.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                content = payload.decode('latin-1')
             if year:
                 return _parse_openfootball(content, url, competition, year), None
             table = pd.read_csv(StringIO(content))
@@ -334,7 +353,10 @@ def fetch_history(raw_dir: Path) -> pd.DataFrame:
                     raise ValueError('Missing team name')
                 table[column] = table[column].map(normalize_team)
             table['competition'], table['source'] = competition, url
-            table = table[HISTORY_COLUMNS]
+            table = table.rename(columns=STAT_SOURCES)
+            for column in STAT_COLUMNS:
+                table[column] = pd.to_numeric(table[column], errors='coerce') if column in table else float('nan')
+            table = table[HISTORY_COLUMNS + STAT_COLUMNS]
             validate_history(table)
             return table.to_dict('records'), None
         except (requests.RequestException, ValueError, KeyError) as exc:
@@ -343,11 +365,11 @@ def fetch_history(raw_dir: Path) -> pd.DataFrame:
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(ingest, sources))
     errors = [error for _, error in results if error]
-    frame = pd.DataFrame([row for rows, _ in results for row in rows], columns=HISTORY_COLUMNS)
+    frame = pd.DataFrame([row for rows, _ in results for row in rows], columns=HISTORY_COLUMNS + STAT_COLUMNS)
     # Keep recent domestic matches after Champions starts as well. The forecast
     # pipeline applies its own historical cutoff; the download never freezes form.
     retrieved = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    frame = frame[frame.date.between('2024-07-01T00:00:00Z', retrieved, inclusive='left')].copy()
+    frame = frame[frame.date.between(HISTORY_START, retrieved, inclusive='left')].copy()
     validate_history(frame)
     frame = frame.sort_values(['date', 'competition', 'home', 'away']).reset_index(drop=True)
     for col in ['home_goals', 'away_goals']:

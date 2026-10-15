@@ -175,7 +175,8 @@ def run(root: Path, cutoff: str, matchday: int | None = None, simulations: int =
         if not evaluate_model:
             raise ValueError("El modelo auto requiere evaluación; elige --model poisson o baseline al omitirla.")
         model_kind = evaluation.get("selected_model", "baseline")
-    model = GoalModel(kind=model_kind).fit(history, cutoff)
+    tuned = evaluation.get("selected_params", {}) if requested_model == "auto" and model_kind == "poisson" else {}
+    model = GoalModel(kind=model_kind, **tuned).fit(history, cutoff)
     probabilities, diagnostics = simulate(fixtures, model, simulations=simulations, seed=seed, knockout=knockout)
     warnings.extend(diagnostics.get("warnings", []))
     warnings.extend(getattr(model, "warnings", []))

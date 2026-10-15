@@ -245,3 +245,69 @@ def test_payload_copy_and_validation():
     payload["schema_version"] = 999
     with pytest.raises(ValueError):
         mod.GoalModel.from_dict(payload)
+
+
+def _two_league_history(seed=3):
+    rng = np.random.default_rng(seed)
+    strength = {"s": .45, "w": -.45}
+    teams = {f"{k}{i}": k for k in strength for i in range(6)}
+    rows = []
+    for day in range(500):
+        for _ in range(4):
+            if rng.random() < .8:
+                k = rng.choice(list(strength))
+                h, a = rng.choice([t for t in teams if teams[t] == k], 2, replace=False)
+                comp = "E0" if k == "s" else "N1"
+            else:
+                h, a = rng.choice(list(teams), 2, replace=False)
+                comp = "UCL"
+            rows.append(dict(date=pd.Timestamp("2024-01-01") + pd.Timedelta(days=day), home=h, away=a,
+                             home_goals=int(rng.poisson(np.exp(.45 + strength[teams[h]] - strength[teams[a]] * .5))),
+                             away_goals=int(rng.poisson(np.exp(.2 + strength[teams[a]] - strength[teams[h]] * .5))),
+                             competition=comp))
+    return pd.DataFrame(rows), teams
+
+
+def test_league_effects_learn_cross_league_gap_and_are_serializable():
+    from champions.models import GoalModel, team_leagues
+    frame, teams = _two_league_history()
+    cutoff = "2026-01-01"
+    assert team_leagues(frame, list(teams)) == {t: ("E0" if k == "s" else "N1") for t, k in teams.items()}
+    model = GoalModel().fit(frame, cutoff)
+    effects = model.fit_info["league_effects"]
+    assert effects["E0"]["attack"] > effects["N1"]["attack"]
+    strong = np.mean([model.attack[t] for t in teams if teams[t] == "s"])
+    weak = np.mean([model.attack[t] for t in teams if teams[t] == "w"])
+    assert strong > weak + .3
+    clone = GoalModel.from_dict(json.loads(json.dumps(model.to_dict())))
+    assert clone.predict_goals("s0", "w0") == model.predict_goals("s0", "w0")
+    flat = GoalModel(use_leagues=False).fit(frame, cutoff)
+    assert "league_effects" not in flat.fit_info
+
+
+def test_league_gradient_matches_finite_differences(monkeypatch):
+    from scipy import optimize
+    from champions.models import GoalModel
+    captured = {}
+    real = optimize.minimize
+    monkeypatch.setattr("champions.models.minimize",
+                        lambda fun, x0, **kw: captured.update(fun=fun, x0=x0) or real(fun, x0, **kw))
+    frame, _ = _two_league_history()
+    GoalModel().fit(frame.iloc[:400], "2026-01-01")
+    x = np.random.default_rng(0).normal(0, .1, captured["x0"].size)
+    err = optimize.check_grad(lambda v: captured["fun"](v)[0], lambda v: captured["fun"](v)[1], x)
+    assert err < 1e-3 * max(1, np.linalg.norm(captured["fun"](x)[1]))
+
+
+def test_xg_blend_uses_shots_only_where_available():
+    from champions.models import GoalModel, goal_targets
+    frame = pd.DataFrame(dict(home_goals=[2, 1], away_goals=[0, 1], home_shots=[10., np.nan],
+                              away_shots=[4., np.nan], home_sot=[5., np.nan], away_sot=[1., np.nan]))
+    yh, ya = goal_targets(frame, 0)
+    assert list(yh) == [2, 1]
+    yh, ya = goal_targets(frame, .5)
+    assert yh[1] == 1 and ya[1] == 1
+    assert np.isclose(yh[0], .5 * 2 + .5 * (.31 * 5 + .03 * 5))
+    assert np.isclose(ya[0], .5 * 0 + .5 * (.31 * 1 + .03 * 3))
+    with pytest.raises(ValueError):
+        GoalModel(xg_blend=1.5)

@@ -30,3 +30,20 @@ def test_evaluation_reports_insufficient_competition_evidence():
     assert evaluate_rolling(pd.DataFrame(), "2026-09-16")["status"] == "insufficient_data"
     with pytest.raises(ValueError):
         evaluate_rolling(pd.DataFrame(), "2026-09-16", folds=1)
+
+
+def test_tuning_grid_is_scored_and_selection_returns_params():
+    rng = np.random.default_rng(5)
+    rows = []
+    for i in range(480):
+        h, a = rng.choice(["a", "b", "c", "d"], 2, replace=False)
+        rows.append(dict(date=pd.Timestamp("2020-01-01") + pd.Timedelta(days=i), home=h, away=a,
+                         home_goals=int(rng.poisson(2 if h == 'a' else .8)),
+                         away_goals=int(rng.poisson(2 if a == 'a' else .8)), competition="UCL"))
+    report = evaluate_rolling(pd.DataFrame(rows), "2022-01-01")
+    scores = report["selection_log_loss"]
+    assert {"poisson", "baseline", "poisson_flat"} <= set(scores)
+    assert sum(name.startswith("poisson[") for name in scores) == 9
+    assert report["selected_candidate"] == min(scores, key=scores.get)
+    assert isinstance(report["selected_params"], dict)
+    assert report["selected_model"] in ("poisson", "baseline")

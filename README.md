@@ -1,6 +1,6 @@
 # Champions Lab
 
-Simulador de la **UEFA Champions League masculina 2026/27**, en Python y pandas, con dashboard Streamlit y previsiones guardadas por jornada. Los resultados conocidos quedan fijados y se simula el resto de la competición.
+Simulador de la **UEFA Champions League masculina 2026/27**, en Python y pandas, con una página web HTML estática (y el dashboard Streamlit anterior) y previsiones guardadas por jornada. Los resultados conocidos quedan fijados y se simula el resto de la competición.
 
 ## Uso en Windows
 
@@ -12,8 +12,10 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 python -m champions.cli update
 python -m champions.cli simulate --simulations 20000 --seed 42
-python -m streamlit run app/streamlit_app.py
+python -m champions.cli export-web      # genera web/index.html (también se genera solo tras `simulate`)
 ```
+
+Abre `web/index.html` con doble clic, o ejecuta `Abrir-web.cmd`. Es un único archivo, sin servidor ni internet; incluye probabilidades ordenables, clasificación esperada, partidos con 1X2, evolución y datos del modelo. El dashboard Streamlit sigue disponible con `python -m streamlit run app/streamlit_app.py`.
 
 Con Python y las dependencias instaladas también puedes abrir `Abrir-dashboard.cmd`. La carpeta `ML CHAMPIONS` del Escritorio enlaza a esta misma copia del proyecto para evitar tener dos versiones divergentes.
 
@@ -53,6 +55,12 @@ Una reconstrucción usa la versión de datos disponible al descargar: no equival
 - Puntos y posición esperados, clasificación proyectada completa del 1 al 36 y evolución de la posición por corte.
 
 Las columnas de rondas son acumulativas; no deben sumar 100% entre sí. Las categorías top 8 / 9–16 / 17–24 / eliminado sí forman una partición. El error Monte Carlo solo mide precisión numérica de la simulación; no mide todos los errores del modelo.
+
+## Cómo se mejora la precisión
+
+- **Más datos**: seis temporadas de ligas nacionales (Inglaterra, Alemania, Italia, España, Francia, Países Bajos, Bélgica, Portugal, Turquía, Grecia, Escocia, Austria, Noruega, Dinamarca, Suiza, Polonia, Suecia) y Champions/Europa/Conference desde 2020/21, con tiros y tiros a puerta cuando la fuente los ofrece.
+- **Fuerza por liga**: cada equipo es su liga más su desviación. Las ligas se enlazan con los cruces europeos, así que un Bodø/Glimt ya no parte del mismo nivel que un Manchester City.
+- **Ajuste automático**: `simulate` compara candidatos (recencia, regularización, goles esperados a partir de tiros) con validación temporal sobre partidos pasados de Champions y usa el mejor. El último bloque queda reservado para evaluar, sin influir en la elección.
 
 ## Modelos y datos
 

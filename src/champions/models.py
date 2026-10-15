@@ -26,6 +26,49 @@ class DataWarning(UserWarning):
     """Invalid or incomplete historical observations were excluded."""
 
 
+# Carried through when present: competition labels feed league-strength effects and the
+# shot columns feed the optional expected-goals proxy.
+OPTIONAL_COLUMNS = ("competition", "home_shots", "away_shots", "home_sot", "away_sot")
+EUROPEAN_COMPETITIONS = frozenset({"UCL", "UEL", "UECL"})
+
+
+def _is_european(label) -> bool:
+    label = str(label)
+    return label in EUROPEAN_COMPETITIONS or "qualifying" in label.lower()
+
+
+def team_leagues(frame: pd.DataFrame, teams: list[str]) -> dict[str, str]:
+    """Domestic league of each team (its most frequent domestic competition), else "OTHER"."""
+    if "competition" not in frame:
+        return {team: "OTHER" for team in teams}
+    domestic = frame.loc[~frame.competition.map(_is_european)]
+    counts = pd.concat([domestic[["home", "competition"]].rename(columns={"home": "team"}),
+                        domestic[["away", "competition"]].rename(columns={"away": "team"})])
+    best = counts.groupby(["team", "competition"]).size().reset_index(name="n").sort_values(
+        ["team", "n", "competition"], ascending=[True, False, True]).drop_duplicates("team")
+    mapping = dict(zip(best.team, best.competition.astype(str)))
+    return {team: mapping.get(team, "OTHER") for team in teams}
+
+
+def goal_targets(frame: pd.DataFrame, blend: float) -> tuple[np.ndarray, np.ndarray]:
+    """Observed goals, optionally blended with a shot-based expected-goals proxy.
+
+    The proxy (0.31 per shot on target, 0.03 per other shot) is only used on rows where
+    both teams have shot data; elsewhere the real score is the target.
+    """
+    yh = frame.home_goals.to_numpy(dtype=float)
+    ya = frame.away_goals.to_numpy(dtype=float)
+    if blend <= 0 or not {"home_shots", "away_shots", "home_sot", "away_sot"}.issubset(frame.columns):
+        return yh, ya
+    cols = [pd.to_numeric(frame[c], errors="coerce").to_numpy(dtype=float)
+            for c in ("home_shots", "home_sot", "away_shots", "away_sot")]
+    hs, hot, as_, aot = cols
+    ok = np.isfinite(hs + hot + as_ + aot) & (hs >= hot) & (as_ >= aot) & (hot >= 0) & (aot >= 0)
+    xg_h = np.where(ok, .31 * hot + .03 * np.where(ok, hs - hot, 0), yh)
+    xg_a = np.where(ok, .31 * aot + .03 * np.where(ok, as_ - aot, 0), ya)
+    return (1 - blend) * yh + blend * xg_h, (1 - blend) * ya + blend * xg_a
+
+
 def _cutoff(value):
     try:
         stamp = pd.Timestamp(value)
@@ -42,7 +85,8 @@ def _completed(history, cutoff):
         raise ValueError(f"history must contain {required}")
     if history.columns.duplicated().any():
         raise ValueError("history has duplicate column names")
-    frame = history[required + (["completed_at"] if "completed_at" in history else [])].copy()
+    optional = [c for c in ("completed_at", *OPTIONAL_COLUMNS) if c in history]
+    frame = history[required + optional].copy()
     frame["date"] = pd.to_datetime(frame.date, errors="coerce", utc=True, format="mixed")
     # Do not inspect scores or team identities of future observations.
     frame = frame.loc[frame.date < cutoff].copy()
@@ -197,11 +241,18 @@ class BaselineModel:
 
 
 class GoalModel(BaselineModel):
-    """MAP Poisson attack/defence model with exponential decay and L2 priors."""
+    """MAP Poisson attack/defence model with exponential decay and L2 priors.
+
+    With ``use_leagues`` (and a ``competition`` column) every team's strength is a league
+    effect plus a team deviation. League effects are lightly regularized, so the level of
+    each domestic league is learned from cross-league European results while team
+    deviations stay shrunk towards their league. Reported attack/defence are the sums.
+    """
 
     def __init__(self, *, kind="poisson", half_life_days=365.0, regularization=5.0, prior_goals=1.35,
                  prior_home_advantage=0.15, prior_matches=10.0, min_team_matches=5,
-                 max_iter=500, tolerance=1e-9):
+                 max_iter=500, tolerance=1e-9, use_leagues=True, league_regularization=0.5,
+                 xg_blend=0.0):
         super().__init__(half_life_days=half_life_days, prior_goals=prior_goals,
                          prior_home_advantage=prior_home_advantage,
                          prior_matches=prior_matches, min_team_matches=min_team_matches)
@@ -214,8 +265,13 @@ class GoalModel(BaselineModel):
             raise ValueError("max_iter must be a positive integer")
         if not np.isfinite(tolerance) or tolerance <= 0:
             raise ValueError("tolerance must be finite and positive")
+        if not np.isfinite(league_regularization) or league_regularization <= 0:
+            raise ValueError("league_regularization must be finite and positive")
+        if not np.isfinite(xg_blend) or not 0 <= xg_blend <= 1:
+            raise ValueError("xg_blend must lie in [0, 1]")
         self.params.update(kind=kind, regularization=float(regularization), max_iter=max_iter,
-                           tolerance=float(tolerance))
+                           tolerance=float(tolerance), use_leagues=bool(use_leagues),
+                           league_regularization=float(league_regularization), xg_blend=float(xg_blend))
 
     def fit(self, history: pd.DataFrame, cutoff: str) -> GoalModel:
         # Baseline initializes an explicit fallback if optimization fails.
@@ -232,19 +288,29 @@ class GoalModel(BaselineModel):
         n = len(teams)
         h = frame.home.map(index).to_numpy()
         a = frame.away.map(index).to_numpy()
-        yh = frame.home_goals.to_numpy(dtype=float)
-        ya = frame.away_goals.to_numpy(dtype=float)
+        yh, ya = goal_targets(frame, self.params["xg_blend"])
         age = (_cutoff(cutoff) - frame.date).dt.total_seconds().to_numpy() / 86400
         weights = np.exp2(-age / self.params["half_life_days"])
-        prior_mean = np.zeros(2 + 2 * n)
+        leagues = team_leagues(frame, teams) if self.params["use_leagues"] else {t: "OTHER" for t in teams}
+        league_names = sorted(set(leagues.values()))
+        nl = len(league_names)
+        lg = np.array([league_names.index(leagues[t]) for t in teams])
+        size = 2 + 2 * n + 2 * nl
+        prior_mean = np.zeros(size)
         prior_mean[:2] = [np.log(self.params["prior_goals"]), self.params["prior_home_advantage"]]
-        penalty = np.full(2 + 2 * n, self.params["regularization"])
+        penalty = np.full(size, self.params["regularization"])
         penalty[:2] = self.params["prior_matches"]
-        initial = np.zeros_like(prior_mean)
+        penalty[2 + 2 * n:] = self.params["league_regularization"]
+        initial = np.zeros(size)
         initial[:2] = [self.intercept, self.home_advantage]
 
+        def strengths(x):
+            attack = x[2:2+n] + x[2+2*n:2+2*n+nl][lg]
+            defence = x[2+n:2+2*n] + x[2+2*n+nl:][lg]
+            return attack, defence
+
         def objective(x):
-            attack, defence = x[2:2+n], x[2+n:]
+            attack, defence = strengths(x)
             lh = x[0] + x[1] + attack[h] - defence[a]
             la = x[0] + attack[a] - defence[h]
             mh, ma = np.exp(lh), np.exp(la)
@@ -254,12 +320,16 @@ class GoalModel(BaselineModel):
             grad = penalty * delta
             grad[0] += (rh + ra).sum()
             grad[1] += rh.sum()
-            grad[2:2+n] += np.bincount(h, rh, n) + np.bincount(a, ra, n)
-            grad[2+n:] -= np.bincount(a, rh, n) + np.bincount(h, ra, n)
+            g_attack = np.bincount(h, rh, n) + np.bincount(a, ra, n)
+            g_defence = -(np.bincount(a, rh, n) + np.bincount(h, ra, n))
+            grad[2:2+n] += g_attack
+            grad[2+n:2+2*n] += g_defence
+            grad[2+2*n:2+2*n+nl] += np.bincount(lg, g_attack, nl)
+            grad[2+2*n+nl:] += np.bincount(lg, g_defence, nl)
             return float(value), grad
 
         result = minimize(objective, initial, jac=True, method="L-BFGS-B",
-                          bounds=[(-3, 3), (-1.5, 1.5)] + [(-2.5, 2.5)] * (2 * n),
+                          bounds=[(-3, 3), (-1.5, 1.5)] + [(-2.5, 2.5)] * (2 * n) + [(-1.5, 1.5)] * (2 * nl),
                           options={"maxiter": self.params["max_iter"], "ftol": self.params["tolerance"]})
         success = bool(result.success and np.isfinite(result.fun) and np.all(np.isfinite(result.x)))
         self.fit_info = {"method": "L-BFGS-B", "success": success,
@@ -268,8 +338,13 @@ class GoalModel(BaselineModel):
                          "fallback": None if success else "baseline"}
         if success:
             self.intercept, self.home_advantage = map(float, result.x[:2])
-            self.attack = dict(zip(teams, map(float, result.x[2:2+n])))
-            self.defence = dict(zip(teams, map(float, result.x[2+n:])))
+            attack, defence = strengths(result.x)
+            self.attack = dict(zip(teams, map(float, attack)))
+            self.defence = dict(zip(teams, map(float, defence)))
+            if nl > 1:
+                self.fit_info["league_effects"] = {
+                    name: {"attack": float(result.x[2+2*n+i]), "defence": float(result.x[2+2*n+nl+i])}
+                    for i, name in enumerate(league_names)}
         else:
             self._warn("Poisson optimization did not converge; using smoothed baseline rates.", RuntimeWarning)
         return self
