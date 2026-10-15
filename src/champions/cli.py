@@ -20,6 +20,9 @@ def main():
     forecast.add_argument("--model", choices=["auto", "poisson", "baseline", "dixon_coles", "ensemble"], default="auto")
     forecast.add_argument("--skip-evaluation", action="store_true")
     forecast.add_argument("--knockout", type=Path, help="JSON del cuadro oficial y partidos de eliminatorias ya conocidos")
+    forecast.add_argument("--no-web", action="store_true", help="No regenerar web/index.html tras simular")
+    export = commands.add_parser("export-web", help="Generar la página HTML (web/index.html) con los snapshots guardados")
+    export.add_argument("--out", type=Path, default=None, help="Archivo de salida (por defecto web/index.html)")
     replay = commands.add_parser("reproduce", help="Verificar hashes y reproducir una ejecución")
     replay.add_argument("run_id")
     commands.add_parser("list", help="Listar snapshots")
@@ -33,6 +36,15 @@ def main():
             value = {"snapshot": str(run(args.root.resolve(), args.cutoff or pd.Timestamp.now(tz="UTC").isoformat(),
                                          args.matchday, args.simulations, args.seed,
                                          not args.skip_evaluation, args.model, args.knockout))}
+            if not args.no_web:
+                from champions.web import export
+                try:
+                    value["web"] = str(export(args.root.resolve()))
+                except (OSError, ValueError) as exc:
+                    value["web_error"] = str(exc)
+        elif args.command == "export-web":
+            from champions.web import export
+            value = {"web": str(export(args.root.resolve(), args.out))}
         elif args.command == "reproduce":
             value = reproduce(args.root.resolve(), args.run_id)
         else:

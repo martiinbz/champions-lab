@@ -206,3 +206,9 @@ exclusion, future and holdout perturbation isolation, timestamp grouping, input
 immutability, deterministic fits, JSON round-trips, baseline compatibility,
 normalized outcome tails, decay weights, invalid scores, sparse/empty priors,
 persistent warnings, optimizer fallback and temporal metrics.
+
+
+## Fuerza por liga y expected goals opcionales
+
+- Con la columna `competition`, `GoalModel` (`use_leagues=True` por defecto) descompone ataque y defensa de cada equipo en un efecto de liga (regularización `league_regularization`, ligera) más una desviación del equipo (`regularization`). Los efectos de liga se identifican con los partidos europeos entre ligas; los equipos sin liga doméstica en los datos comparten el grupo `OTHER`. `attack`/`defence` guardados son la suma, por lo que la predicción y la serialización no cambian. Con datos reales (UCL, tres bloques temporales) baja el log-loss de Poisson de 0,940 a 0,922; `GoalModel(use_leagues=False)` recupera el comportamiento anterior.
+- `xg_blend` (0 por defecto) mezcla los goles reales con un proxy de goles esperados a partir de tiros (0,31 por tiro a puerta y 0,03 por el resto) solo en partidos con ambos datos de tiros. Las métricas de evaluación siguen usando goles reales. En las pruebas con datos reales no mejoró la selección, por eso no está activo.
